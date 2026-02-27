@@ -42,11 +42,19 @@ async function handleImageRatio(ctx, ratio) {
 
 async function handleImagePrompt(ctx) {
   const prompt = ctx.message.text;
+
+  // Guard against expired session (Redis TTL) — session fields reset to null
+  const model = ctx.session.selectedModel;
+  const ratio = ctx.session.selectedRatio;
+  if (!model || !ratio) {
+    ctx.session.step = 'main_menu';
+    await ctx.reply('❌ Sesi kamu kadaluarsa. Silakan mulai ulang dari menu.');
+    return sendMainMenu(ctx);
+  }
+
   ctx.session.prompt = prompt;
   ctx.session.step = 'confirming';
 
-  const model = ctx.session.selectedModel;
-  const ratio = ctx.session.selectedRatio;
   const modelLabel = model === 'mystic' ? 'Mystic 2K' : 'Classic Fast';
 
   await ctx.reply(
@@ -61,6 +69,14 @@ async function handleImagePrompt(ctx) {
 
 async function confirmImageGeneration(ctx) {
   const { selectedModel, selectedRatio, prompt } = ctx.session;
+
+  // Guard against null session values
+  if (!selectedModel || !selectedRatio || !prompt) {
+    ctx.session.step = 'main_menu';
+    await ctx.editMessageText('❌ Sesi kadaluarsa. Silakan mulai ulang.').catch(() => {});
+    return sendMainMenu(ctx);
+  }
+
   ctx.session.step = 'generating';
 
   await ctx.editMessageText(

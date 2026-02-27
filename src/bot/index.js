@@ -1,7 +1,7 @@
 'use strict';
 
 const { Telegraf, session } = require('telegraf');
-const { Redis: IORedis } = require('ioredis');
+const { getRedis } = require('../utils/redis');
 const { RedisSessionStore } = require('../utils/redisSessionStore');
 
 const config = require('../config');
@@ -20,14 +20,10 @@ const { handleStats, handleAddCredits, handleSetPlan, handleBan, handleUnban, ha
 function createBot() {
   const bot = new Telegraf(config.bot.token);
 
-  // ── Redis session store ──────────────────────────────
-  const redisClient = new IORedis(config.redis.url, {
-    maxRetriesPerRequest: null,
-    enableReadyCheck: false,
-    lazyConnect: true,
-  });
-
-  const sessionStore = new RedisSessionStore(redisClient, {
+  // ── Redis session store (reuse singleton to avoid resource leak) ────
+  // Using getRedis() singleton means only one Redis client is opened and
+  // closed during graceful shutdown — no orphaned connections.
+  const sessionStore = new RedisSessionStore(getRedis(), {
     prefix: 'tgbot:sess:',
     ttl: 86400, // 24h
   });
@@ -293,6 +289,8 @@ function createBot() {
   });
 
   bot.action(/^check_payment:(.+)$/, async (ctx) => {
+    // answerCbQuery here (not delegated to handler) to match consistent pattern
+    await ctx.answerCbQuery('🔄 Mengecek status pembayaran...');
     const transactionId = ctx.match[1];
     await handleCheckPayment(ctx, transactionId);
   });

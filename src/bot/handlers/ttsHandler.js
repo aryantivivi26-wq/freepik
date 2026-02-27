@@ -1,6 +1,7 @@
 'use strict';
 
 const { ttsVoiceKeyboard, ttsConfirmKeyboard } = require('../menus/ttsMenu');
+const { sendMainMenu } = require('../menus/mainMenu');
 const { submitJob } = require('./jobHandler');
 
 const VOICE_LABELS = {
@@ -37,6 +38,14 @@ async function handleTTSVoice(ctx, voice) {
 async function handleTTSPrompt(ctx) {
   const text = ctx.message.text;
 
+  // Guard against expired session
+  const voice = ctx.session.selectedVoice;
+  if (!voice) {
+    ctx.session.step = 'main_menu';
+    await ctx.reply('❌ Sesi kamu kadaluarsa. Silakan mulai ulang dari menu.');
+    return sendMainMenu(ctx);
+  }
+
   if (text.length > 5000) {
     return ctx.reply('❌ Teks terlalu panjang. Maksimal 5000 karakter.');
   }
@@ -44,7 +53,7 @@ async function handleTTSPrompt(ctx) {
   ctx.session.prompt = text;
   ctx.session.step = 'confirming';
 
-  const voiceLabel = VOICE_LABELS[ctx.session.selectedVoice] || ctx.session.selectedVoice;
+  const voiceLabel = VOICE_LABELS[voice] || voice;
   const preview = text.length > 100 ? text.slice(0, 100) + '...' : text;
 
   await ctx.reply(
@@ -58,6 +67,14 @@ async function handleTTSPrompt(ctx) {
 
 async function confirmTTSGeneration(ctx) {
   const { selectedVoice, prompt } = ctx.session;
+
+  // Guard against null session values
+  if (!selectedVoice || !prompt) {
+    ctx.session.step = 'main_menu';
+    await ctx.editMessageText('❌ Sesi kadaluarsa. Silakan mulai ulang.').catch(() => {});
+    return sendMainMenu(ctx);
+  }
+
   ctx.session.step = 'generating';
 
   await ctx.editMessageText(

@@ -131,6 +131,13 @@ async function listTransactions(params = {}) {
 function verifyWebhookSignature(rawBody, signature) {
   if (!config.hubify.webhookSecret || !signature) return false;
 
+  // Normalize: strip optional "sha256=" prefix, force lowercase
+  const normalizedSig = signature.replace(/^sha256=/i, '').toLowerCase();
+
+  // Validate: must be exactly 64 hex characters (32 bytes)
+  // timingSafeEqual throws RangeError if buffers have different lengths
+  if (!/^[0-9a-f]{64}$/.test(normalizedSig)) return false;
+
   const expected = crypto
     .createHmac('sha256', config.hubify.webhookSecret)
     .update(rawBody)
@@ -138,7 +145,7 @@ function verifyWebhookSignature(rawBody, signature) {
 
   return crypto.timingSafeEqual(
     Buffer.from(expected, 'hex'),
-    Buffer.from(signature, 'hex')
+    Buffer.from(normalizedSig, 'hex')
   );
 }
 

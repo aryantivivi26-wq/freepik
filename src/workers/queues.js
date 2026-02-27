@@ -61,10 +61,12 @@ function getTTSQueue() {
  * @returns {Job} BullMQ job
  */
 async function enqueueJob(type, payload) {
+  // NOTE: jobId intentionally NOT set in BullMQ options — using payload.jobId only
+  // as a reference in the job data. Setting jobId in options causes BullMQ to
+  // treat it as a deduplication key and silently drop duplicate submissions.
   const jobOpts = {
     ...DEFAULT_JOB_OPTIONS,
     priority: payload.priority || 0,
-    jobId: payload.jobId,
   };
 
   switch (type) {

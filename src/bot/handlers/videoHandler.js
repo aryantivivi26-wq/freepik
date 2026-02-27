@@ -1,6 +1,7 @@
 'use strict';
 
 const { videoModelKeyboard, videoRatioKeyboard, videoDurationKeyboard, videoConfirmKeyboard } = require('../menus/videoMenu');
+const { sendMainMenu } = require('../menus/mainMenu');
 const { submitJob } = require('./jobHandler');
 
 async function startVideoFlow(ctx) {
@@ -52,10 +53,18 @@ async function handleVideoDuration(ctx, duration) {
 
 async function handleVideoPrompt(ctx) {
   const prompt = ctx.message.text;
+
+  // Guard against expired session
+  const { selectedModel, selectedRatio, selectedDuration } = ctx.session;
+  if (!selectedModel || !selectedRatio || !selectedDuration) {
+    ctx.session.step = 'main_menu';
+    await ctx.reply('❌ Sesi kamu kadaluarsa. Silakan mulai ulang dari menu.');
+    return sendMainMenu(ctx);
+  }
+
   ctx.session.prompt = prompt;
   ctx.session.step = 'confirming';
 
-  const { selectedModel, selectedRatio, selectedDuration } = ctx.session;
   const label = selectedModel === 'kling_pro' ? 'Kling v3 Pro' : 'Kling v3 Std';
 
   await ctx.reply(
@@ -71,6 +80,14 @@ async function handleVideoPrompt(ctx) {
 
 async function confirmVideoGeneration(ctx) {
   const { selectedModel, selectedRatio, selectedDuration, prompt } = ctx.session;
+
+  // Guard against null session values
+  if (!selectedModel || !selectedRatio || !selectedDuration || !prompt) {
+    ctx.session.step = 'main_menu';
+    await ctx.editMessageText('❌ Sesi kadaluarsa. Silakan mulai ulang.').catch(() => {});
+    return sendMainMenu(ctx);
+  }
+
   ctx.session.step = 'generating';
 
   await ctx.editMessageText(

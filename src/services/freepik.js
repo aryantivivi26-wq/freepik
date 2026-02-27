@@ -78,7 +78,7 @@ async function generateImageClassic(prompt, size = 'square_1_1') {
     image: { size: imageSize },
     styling: {
       style: 'photo',
-      effects: { color: 'auto', lightning: 'auto', framing: 'auto' },
+      effects: { color: 'auto', lighting: 'auto', framing: 'auto' },
     },
     filter_nsfw: true,
   });

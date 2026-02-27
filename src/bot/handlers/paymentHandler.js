@@ -86,8 +86,7 @@ async function handleBuyPlan(ctx, plan) {
 }
 
 async function handleCheckPayment(ctx, transactionId) {
-  await ctx.answerCbQuery('🔄 Mengecek status pembayaran...');
-
+  // Note: answerCbQuery is called at the action registration site in bot/index.js
   try {
     const txResult = await checkTransactionStatus(transactionId);
 
@@ -125,10 +124,15 @@ async function handleCheckPayment(ctx, transactionId) {
     } else if (txResult.status === 'expired') {
       ctx.session.step = 'main_menu';
       ctx.session.pendingTransactionId = null;
-      await ctx.editMessageCaption(
-        `⏰ *Transaksi sudah kadaluarsa.*\n\nSilakan buat transaksi baru.`,
-        { parse_mode: 'Markdown' }
-      ).catch(() => ctx.reply('⏰ Transaksi sudah kadaluarsa. Silakan buat transaksi baru.'));
+      // The payment message may be either a text message (editMessageText) or
+      // a photo message with caption (editMessageCaption) depending on whether
+      // Hubify returned a QR image. Try text first, fall back to caption.
+      const expiredText = `⏰ *Transaksi sudah kadaluarsa.*\n\nSilakan buat transaksi baru.`;
+      await ctx.editMessageText(expiredText, { parse_mode: 'Markdown' })
+        .catch(() =>
+          ctx.editMessageCaption(expiredText, { parse_mode: 'Markdown' })
+            .catch(() => ctx.reply('⏰ Transaksi sudah kadaluarsa. Silakan buat transaksi baru.'))
+        );
 
     } else {
       // Still pending
@@ -155,7 +159,9 @@ async function handleCancelPayment(ctx, transactionId) {
   ctx.session.pendingTransactionId = null;
   ctx.session.pendingPlan = null;
 
-  await ctx.editMessageText('❌ Transaksi dibatalkan.').catch(() => {});
+  // Message may be a photo (QR code) or text — try both edit methods.
+  await ctx.editMessageText('❌ Transaksi dibatalkan.')
+    .catch(() => ctx.editMessageCaption('❌ Transaksi dibatalkan.').catch(() => {}));
   await sendMainMenu(ctx);
 }
 

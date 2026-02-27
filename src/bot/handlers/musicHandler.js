@@ -1,6 +1,7 @@
 'use strict';
 
 const { musicDurationKeyboard, musicConfirmKeyboard } = require('../menus/musicMenu');
+const { sendMainMenu } = require('../menus/mainMenu');
 const { submitJob } = require('./jobHandler');
 
 async function startMusicFlow(ctx) {
@@ -29,12 +30,21 @@ async function handleMusicDuration(ctx, duration) {
 
 async function handleMusicPrompt(ctx) {
   const prompt = ctx.message.text;
+
+  // Guard against expired session
+  const duration = ctx.session.selectedDuration;
+  if (!duration) {
+    ctx.session.step = 'main_menu';
+    await ctx.reply('❌ Sesi kamu kadaluarsa. Silakan mulai ulang dari menu.');
+    return sendMainMenu(ctx);
+  }
+
   ctx.session.prompt = prompt;
   ctx.session.step = 'confirming';
 
   await ctx.reply(
     `🎵 *Konfirmasi Generate Musik*\n\n` +
-    `⏱ Durasi: *${ctx.session.selectedDuration} detik*\n` +
+    `⏱ Durasi: *${duration} detik*\n` +
     `📝 Prompt:\n\`${prompt}\`\n\n` +
     `Lanjutkan generate?`,
     { parse_mode: 'Markdown', ...musicConfirmKeyboard() }
@@ -43,6 +53,14 @@ async function handleMusicPrompt(ctx) {
 
 async function confirmMusicGeneration(ctx) {
   const { selectedDuration, prompt } = ctx.session;
+
+  // Guard against null session values
+  if (!selectedDuration || !prompt) {
+    ctx.session.step = 'main_menu';
+    await ctx.editMessageText('❌ Sesi kadaluarsa. Silakan mulai ulang.').catch(() => {});
+    return sendMainMenu(ctx);
+  }
+
   ctx.session.step = 'generating';
 
   await ctx.editMessageText(

@@ -13,6 +13,8 @@ async function userMiddleware(ctx, next) {
     ctx.state.user = user;
 
     if (user.isBanned) {
+      // Must answer callback queries or Telegram shows permanent spinner
+      if (ctx.callbackQuery) await ctx.answerCbQuery().catch(() => {});
       return ctx.reply('🚫 Akun kamu telah diblokir. Hubungi admin untuk informasi lebih lanjut.');
     }
   } catch (err) {

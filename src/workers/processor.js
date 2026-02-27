@@ -82,7 +82,14 @@ async function processJob(bullJob) {
     // ── Update job as done ────────────────
     await JobModel.findOneAndUpdate({ jobId }, { status: 'done', resultPath: filePath });
 
-    // ── Notify user (inline with result) ─
+    // ── Decrement active jobs counter (success path — exactly once) ───
+    await decrementActiveJobs(userId);
+
+    // ── Schedule file cleanup after sending ───────────────────────────
+    if (filePath) {
+      setTimeout(() => deleteFile(filePath), 60000); // delete after 1 min
+    }
+
     console.log(`[Worker] Job ${jobId} completed successfully`);
 
   } catch (err) {
@@ -91,8 +98,15 @@ async function processJob(bullJob) {
     // Update DB
     await JobModel.findOneAndUpdate({ jobId }, { status: 'failed', errorMsg: err.message });
 
-    // Refund credit if all attempts exhausted
-    if (bullJob.attemptsMade + 1 >= (bullJob.opts.attempts || 3)) {
+    // Only decrement + refund + notify on the FINAL attempt.
+    // On earlier attempts BullMQ will retry and the slot must stay occupied.
+    const maxAttempts = bullJob.opts?.attempts || 3;
+    const isFinalAttempt = bullJob.attemptsMade + 1 >= maxAttempts;
+
+    if (isFinalAttempt) {
+      // Decrement active jobs counter (final failure — exactly once)
+      await decrementActiveJobs(userId);
+
       await refundCredit(userId, type);
       try {
         await bot.telegram.sendMessage(
@@ -107,15 +121,12 @@ async function processJob(bullJob) {
       }
     }
 
-    throw err; // Let BullMQ handle retry
-  } finally {
-    // Decrement active jobs counter
-    await decrementActiveJobs(userId);
-
-    // Cleanup file after sending (best-effort)
+    // Cleanup temp file on failure too
     if (filePath) {
-      setTimeout(() => deleteFile(filePath), 60000); // delete after 1 min
+      setTimeout(() => deleteFile(filePath), 5000);
     }
+
+    throw err; // Let BullMQ handle retry
   }
 }
 

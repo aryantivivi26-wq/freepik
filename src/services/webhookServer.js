@@ -22,17 +22,26 @@ function setWebhookBot(bot) {
 function createWebhookServer() {
   const app = express();
 
-  // ── Raw body capture (MUST be before json parser for signature verification)
+  // ── Raw body capture + JSON parse in a single read pass ──────────────
+  // express.raw() reads the stream once into req.body as Buffer.
+  // We then capture rawBody (string) for HMAC verification, and parse JSON
+  // into req.body so route handlers can use req.body normally.
+  // This avoids the bug where a custom stream-reader consumes the request
+  // before express.json() can read it, leaving req.body always empty.
+  app.use(express.raw({ type: '*/*', limit: '1mb' }));
   app.use((req, res, next) => {
-    let rawBody = '';
-    req.on('data', (chunk) => { rawBody += chunk.toString(); });
-    req.on('end', () => {
-      req.rawBody = rawBody;
-      next();
-    });
+    if (Buffer.isBuffer(req.body)) {
+      req.rawBody = req.body.toString('utf8');
+      try {
+        req.body = JSON.parse(req.rawBody);
+      } catch {
+        req.body = {};
+      }
+    } else {
+      req.rawBody = '';
+    }
+    next();
   });
-
-  app.use(express.json());
 
   // ────────────────────────────────────────────────────
   // POST /webhook/hubify  — Hubify payment.completed
