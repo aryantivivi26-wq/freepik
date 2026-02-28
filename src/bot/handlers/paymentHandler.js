@@ -1,5 +1,6 @@
 'use strict';
 
+const QRCode = require('qrcode');
 const { planKeyboard, paymentCheckKeyboard } = require('../menus/paymentMenu');
 const { sendMainMenu } = require('../menus/mainMenu');
 const { createTransaction, checkTransactionStatus } = require('../../services/hubify');
@@ -37,9 +38,23 @@ async function handleBuyPlan(ctx, plan) {
     const txData = await createTransaction(userId, plan);
     ctx.session.pendingTransactionId = txData.transactionId;
 
-    // Build base64 QR image if available
+    // Generate QR code image from QRIS string
     let qrImageBuffer = null;
-    if (txData.qrisImageUrl && txData.qrisImageUrl.startsWith('data:image')) {
+    if (txData.qrisContent) {
+      try {
+        qrImageBuffer = await QRCode.toBuffer(txData.qrisContent, {
+          type: 'png',
+          width: 512,
+          margin: 2,
+          color: { dark: '#000000', light: '#ffffff' },
+        });
+      } catch (qrErr) {
+        console.error('[Payment] QR generation error:', qrErr.message);
+      }
+    }
+
+    // Fallback: try base64 image URL from Hubify if QR generation failed
+    if (!qrImageBuffer && txData.qrisImageUrl && txData.qrisImageUrl.startsWith('data:image')) {
       const base64Data = txData.qrisImageUrl.split(',')[1];
       if (base64Data) qrImageBuffer = Buffer.from(base64Data, 'base64');
     }
