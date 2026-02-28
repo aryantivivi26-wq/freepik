@@ -26,7 +26,14 @@ async function main() {
 
   // ── Connect to Redis (eager) ──────────────────────────
   const redis = getRedis();
-  await redis.connect().catch(() => {}); // already connected if lazyConnect triggered
+  try {
+    await redis.connect();
+  } catch (err) {
+    // If already connected (lazyConnect triggered), ignore; otherwise warn
+    if (err.message && !err.message.includes('already')) {
+      console.warn('[Redis] Initial connect warning:', err.message);
+    }
+  }
 
   // ── Ensure upload/temp directories exist ─────────────
   await ensureDirs();

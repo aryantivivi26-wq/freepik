@@ -21,11 +21,21 @@ async function getOrCreateUser(ctx) {
     });
     console.log(`[User] New user created: ${tgUser.id}`);
   } else {
-    // Update profile info
-    user.username = tgUser.username || null;
-    user.firstName = tgUser.first_name || null;
-    user.lastName = tgUser.last_name || null;
-    await user.save();
+    // Only save if profile info actually changed
+    const newUsername = tgUser.username || null;
+    const newFirstName = tgUser.first_name || null;
+    const newLastName = tgUser.last_name || null;
+
+    if (
+      user.username !== newUsername ||
+      user.firstName !== newFirstName ||
+      user.lastName !== newLastName
+    ) {
+      user.username = newUsername;
+      user.firstName = newFirstName;
+      user.lastName = newLastName;
+      await user.save();
+    }
   }
 
   return user;

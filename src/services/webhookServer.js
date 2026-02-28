@@ -55,7 +55,8 @@ function createWebhookServer() {
         return res.status(401).json({ success: false, error: 'Invalid signature' });
       }
 
-      const payload = JSON.parse(req.rawBody);
+      // req.body is already parsed by the raw-body middleware above
+      const payload = req.body;
       console.log('[Webhook] Received Hubify webhook:', payload);
 
       const { order_id, status, customer_id, amount, completed_at } = payload;

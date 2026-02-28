@@ -1,0 +1,81 @@
+# ══════════════════════════════════════════════════════
+#  Telegram AI Generator Bot — Docker Compose
+#  Untuk Coolify: import repo → pilih docker-compose
+#  Untuk local/VPS: docker compose up -d
+# ══════════════════════════════════════════════════════
+
+networks:
+  botnet:
+
+services:
+  # ── Bot (Telegram + Express webhook server) ────────
+  bot:
+    build: .
+    restart: unless-stopped
+    command: ["node", "src/index.js"]
+    env_file: .env
+    environment:
+      - REDIS_URL=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379
+    ports:
+      - "${WEBHOOK_PORT:-3001}:${WEBHOOK_PORT:-3001}"
+    volumes:
+      - uploads-data:/app/uploads
+      - temp-data:/app/temp
+    networks:
+      - botnet
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:${WEBHOOK_PORT:-3001}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ── Worker (BullMQ job processor) ──────────────────
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ["node", "src/workers/index.js"]
+    env_file: .env
+    environment:
+      - REDIS_URL=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379
+    volumes:
+      - uploads-data:/app/uploads
+      - temp-data:/app/temp
+    networks:
+      - botnet
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ── Redis ──────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: >
+      sh -c '
+        if [ -n "$REDIS_PASSWORD" ]; then
+          redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru --requirepass "$REDIS_PASSWORD"
+        else
+          redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+        fi
+      '
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    volumes:
+      - redis-data:/data
+    networks:
+      - botnet
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ${REDIS_PASSWORD:+-a $REDIS_PASSWORD} ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  uploads-data:
+  temp-data:
+  redis-data:

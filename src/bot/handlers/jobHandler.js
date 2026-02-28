@@ -1,7 +1,7 @@
 'use strict';
 
 const { v4: uuidv4 } = require('uuid');
-const { Job: JobModel } = require('../../models');
+const { Job: JobModel, User } = require('../../models');
 const { enqueueJob } = require('../../workers/queues');
 const { getUserActiveJobs, incrementActiveJobs } = require('../../utils/redis');
 const config = require('../../config');
@@ -31,8 +31,24 @@ async function submitJob(ctx, type, prompt, model, options = {}) {
     return null;
   }
 
-  // ── Credit check ────────────────────────
-  if (!user.hasCredits(type)) {
+  // ── Plan expiry check ─────────────────
+  if (!user.isPlanActive()) {
+    await ctx.reply(
+      `⚠️ *Plan ${user.plan.toUpperCase()} kamu sudah expired!*\n\n` +
+      `Credit di-reset ke Free plan. Ketuk *💎 Upgrade Plan* untuk perpanjang.`,
+      { parse_mode: 'Markdown' }
+    );
+    // Reset to free plan
+    user.plan = 'free';
+    user.credits = { ...config.plans.free.credits };
+    user.planExpiresAt = null;
+    await user.save();
+    return null;
+  }
+
+  // ── Atomic credit deduction (concurrency-safe) ──
+  const updatedUser = await User.atomicDeductCredit(userId, type);
+  if (!updatedUser) {
     await ctx.reply(
       `❌ *Credit ${type} kamu habis!*\n\n` +
       `Upgrade plan untuk mendapatkan lebih banyak credit.\n` +
@@ -41,9 +57,8 @@ async function submitJob(ctx, type, prompt, model, options = {}) {
     );
     return null;
   }
-
-  // ── Deduct credit ───────────────────────
-  await user.deductCredit(type);
+  // Sync local user object with updated credits
+  user.credits[type] = updatedUser.credits[type];
 
   // ── Create job in DB ────────────────────
   const jobId = uuidv4();
@@ -68,9 +83,8 @@ async function submitJob(ctx, type, prompt, model, options = {}) {
   const payload = { userId, chatId, messageId: ctx.message?.message_id || null, prompt, model, options, jobId, type, priority };
   await enqueueJob(type, payload);
 
-  // ── Update user total jobs ──────────────
-  user.totalJobs = (user.totalJobs || 0) + 1;
-  await user.save();
+  // ── Atomically increment total jobs counter ──────────
+  await User.findOneAndUpdate({ telegramId: userId }, { $inc: { totalJobs: 1 } });
 
   console.log(`[JobHandler] Submitted ${type} job ${jobId} for user ${userId}`);
   return jobId;

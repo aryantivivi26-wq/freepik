@@ -2,402 +2,198 @@
 
 ## Daftar Isi
 
-1. [Persyaratan VPS](#1-persyaratan-vps)
-2. [Persiapan Server](#2-persiapan-server)
-3. [Install Node.js](#3-install-nodejs)
-4. [Install Redis](#4-install-redis)
+1. [Persyaratan](#1-persyaratan)
+2. [Deploy di Coolify (Rekomendasi)](#2-deploy-di-coolify-rekomendasi)
+3. [Deploy Manual dengan Docker Compose](#3-deploy-manual-dengan-docker-compose)
+4. [Deploy Manual Tanpa Docker (VPS)](#4-deploy-manual-tanpa-docker-vps)
 5. [Setup MongoDB Atlas](#5-setup-mongodb-atlas)
-6. [Deploy Kode Bot](#6-deploy-kode-bot)
-7. [Konfigurasi .env](#7-konfigurasi-env)
-8. [Jalankan dengan PM2](#8-jalankan-dengan-pm2)
-9. [Setup Nginx + SSL (Webhook)](#9-setup-nginx--ssl-webhook)
-10. [Daftarkan Webhook ke Hubify](#10-daftarkan-webhook-ke-hubify)
-11. [Perintah Sehari-hari](#11-perintah-sehari-hari)
-12. [Troubleshooting](#12-troubleshooting)
+6. [Konfigurasi .env](#6-konfigurasi-env)
+7. [Setup Domain & SSL](#7-setup-domain--ssl)
+8. [Daftarkan Webhook ke Hubify](#8-daftarkan-webhook-ke-hubify)
+9. [Perintah Sehari-hari](#9-perintah-sehari-hari)
+10. [Troubleshooting](#10-troubleshooting)
 
 ---
 
-## 1. Persyaratan VPS
+## 1. Persyaratan
+
+### Semua Metode Deploy
+
+| Komponen | Keterangan |
+|----------|------------|
+| MongoDB Atlas | Database (gratis tier M0) — [cloud.mongodb.com](https://cloud.mongodb.com) |
+| Freepik API Key | Untuk AI generation — [freepik.com/api](https://www.freepik.com/api) |
+| Hubify API Key | Untuk QRIS payment — dashboard Hubify |
+| Telegram Bot Token | Dari [@BotFather](https://t.me/BotFather) |
+| Domain + SSL | Untuk menerima webhook Hubify |
+
+### Untuk Coolify
+
+| Komponen | Keterangan |
+|----------|------------|
+| Coolify Instance | Self-hosted di VPS (min 2GB RAM) — [coolify.io](https://coolify.io) |
+| GitHub/GitLab repo | Kode bot di-push ke repo |
+
+### Untuk Docker Compose / Manual
 
 | Komponen | Minimum | Rekomendasi |
 |----------|---------|-------------|
-| OS | Ubuntu 22.04 LTS | Ubuntu 22.04 LTS |
+| OS | Ubuntu 22.04+ | Ubuntu 24.04 LTS |
 | CPU | 1 vCore | 2 vCore |
 | RAM | 1 GB | 2 GB |
 | Storage | 20 GB | 40 GB |
-| Node.js | v18 LTS | v20 LTS |
-| Akses | Root / sudo | Root / sudo |
-
-> **IP Publik atau Domain diperlukan** jika ingin menerima webhook dari Hubify.
+| Docker | v24+ | v27+ |
 
 ---
 
-## 2. Persiapan Server
+## 2. Deploy di Coolify (Rekomendasi)
 
-Login ke VPS via SSH:
+Coolify adalah self-hosted PaaS (alternatif Heroku/Vercel). Mendukung Docker Compose langsung dari Git repo.
 
-```bash
-ssh root@IP_VPS_KAMU
-```
+### 2a. Pastikan Coolify Sudah Terinstall
 
-Update sistem dan install dependensi dasar:
+Jika belum punya Coolify:
 
 ```bash
-apt update && apt upgrade -y
-apt install -y curl git build-essential ufw nginx certbot python3-certbot-nginx
+# Di VPS baru (min 2GB RAM, Ubuntu 22.04+)
+curl -fsSL https://cdn.coollabs.io/coolify/install.sh | bash
 ```
 
-Konfigurasi firewall dasar:
+Buka Coolify dashboard di `http://IP_VPS:8000`, buat akun admin.
 
-```bash
-ufw allow OpenSSH
-ufw allow 80
-ufw allow 443
-ufw enable
-```
+### 2b. Hubungkan GitHub/GitLab
 
-Buat user non-root untuk menjalankan bot (opsional tapi direkomendasikan):
+1. Di Coolify dashboard → **Sources** → tambahkan GitHub/GitLab
+2. Authorize akses ke repo bot kamu
 
-```bash
-adduser botuser
-usermod -aG sudo botuser
-su - botuser
-```
+### 2c. Buat Project & Resource Baru
 
----
+1. **Projects** → **New Project** → beri nama "AI Bot"
+2. Di dalam project → **+ New** → pilih **Docker Compose**
+3. Pilih repo GitHub kamu → branch `main`
+4. Coolify akan otomatis mendeteksi `docker-compose.yml`
 
-## 3. Install Node.js
+### 2d. Konfigurasi Environment Variables
 
-Gunakan NVM (Node Version Manager) agar mudah upgrade:
-
-```bash
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-
-# Reload shell
-source ~/.bashrc
-
-# Install Node.js 20 LTS
-nvm install 20
-nvm use 20
-nvm alias default 20
-
-# Verifikasi
-node -v   # → v20.x.x
-npm -v    # → 10.x.x
-```
-
----
-
-## 4. Install Redis
-
-```bash
-# Install Redis dari repo resmi Ubuntu
-sudo apt install -y redis-server
-
-# Edit konfigurasi Redis
-sudo nano /etc/redis/redis.conf
-```
-
-Cari dan ubah baris-baris berikut di `redis.conf`:
-
-```
-# Bind hanya ke localhost (lebih aman)
-bind 127.0.0.1 -::1
-
-# Aktifkan password (opsional tapi disarankan)
-requirepass PASSWORD_REDIS_KAMU
-
-# Aktifkan persistence (supaya data tidak hilang jika restart)
-appendonly yes
-appendfilename "appendonly.aof"
-```
-
-Simpan file (`Ctrl+O`, `Enter`, `Ctrl+X`), lalu:
-
-```bash
-# Restart dan aktifkan Redis
-sudo systemctl restart redis-server
-sudo systemctl enable redis-server
-
-# Cek status
-sudo systemctl status redis-server
-
-# Test koneksi (jika pakai password)
-redis-cli -a PASSWORD_REDIS_KAMU ping
-# → PONG
-```
-
-Jika Redis pakai password, format URL di `.env`:
-```
-REDIS_URL=redis://:PASSWORD_REDIS_KAMU@127.0.0.1:6379
-```
-
----
-
-## 5. Setup MongoDB Atlas
-
-### 5a. Buat Akun & Cluster
-
-1. Buka [https://cloud.mongodb.com](https://cloud.mongodb.com) dan daftar/login
-2. Klik **"Create"** → pilih **"M0 Free"** (gratis, cukup untuk bot ini)
-3. Pilih **Cloud Provider**: AWS / Google Cloud / Azure (pilih yang region-nya paling dekat)
-4. Pilih **Region**: Singapore (ap-southeast-1) untuk Indonesia
-5. Beri nama cluster, misal: `ai-bot-cluster`
-6. Klik **"Create Deployment"**
-
-### 5b. Buat Database User
-
-1. Di sidebar kiri klik **"Database Access"**
-2. Klik **"Add New Database User"**
-3. Pilih **Authentication Method**: Password
-4. Isi **Username**: `botuser`
-5. Klik **"Autogenerate Secure Password"** → **COPY password-nya sekarang**
-6. Di **Database User Privileges** pilih **"Read and write to any database"**
-7. Klik **"Add User"**
-
-### 5c. Whitelist IP VPS
-
-1. Di sidebar klik **"Network Access"**
-2. Klik **"Add IP Address"**
-3. Masukkan IP publik VPS kamu (cek dengan `curl ifconfig.me` dari VPS)
-4. Beri deskripsi: `VPS Bot`
-5. Klik **"Confirm"**
-
-> Atau klik **"Allow Access from Anywhere"** (0.0.0.0/0) jika IP VPS bisa berubah. Kurang aman, tapi lebih praktis.
-
-### 5d. Ambil Connection String
-
-1. Di halaman Clusters, klik tombol **"Connect"** di samping cluster kamu
-2. Pilih **"Drivers"**
-3. Pilih **Driver**: Node.js, **Version**: 5.5 or later
-4. Copy connection string, bentuknya:
-   ```
-   mongodb+srv://botuser:<password>@ai-bot-cluster.xxxxx.mongodb.net/?retryWrites=true&w=majority
-   ```
-5. Ganti `<password>` dengan password yang tadi di-copy
-6. Tambahkan nama database sebelum `?`:
-   ```
-   mongodb+srv://botuser:PASSWORD@ai-bot-cluster.xxxxx.mongodb.net/ai-bot?retryWrites=true&w=majority&appName=ai-bot-cluster
-   ```
-
-Simpan string ini — akan diisi ke `MONGODB_URI` di `.env`.
-
----
-
-## 6. Deploy Kode Bot
-
-### Cara A — Upload via Git (Rekomendasi)
-
-Jika kode ada di GitHub/GitLab:
-
-```bash
-cd ~
-git clone https://github.com/USERNAME/REPO_NAME.git bot
-cd bot
-npm install --production
-```
-
-### Cara B — Upload Manual via SCP
-
-Dari komputer lokal kamu:
-
-```bash
-# Zip folder project (tanpa node_modules)
-zip -r bot.zip . -x "node_modules/*" -x ".git/*"
-
-# Upload ke VPS
-scp bot.zip root@IP_VPS_KAMU:/home/botuser/
-
-# Di VPS, ekstrak
-ssh root@IP_VPS_KAMU
-su - botuser
-cd ~
-unzip bot.zip -d bot
-cd bot
-npm install --production
-```
-
-### Buat folder yang diperlukan
-
-```bash
-cd ~/bot
-mkdir -p uploads temp
-```
-
----
-
-## 7. Konfigurasi .env
-
-```bash
-cd ~/bot
-cp .env.example .env
-nano .env
-```
-
-Isi semua variabel:
+Di halaman resource → tab **Environment Variables**, tambahkan semua variabel dari `.env.example`:
 
 ```env
-# ── Telegram ──────────────────────────────────────────
-# Buat bot di @BotFather → /newbot → copy token
 BOT_TOKEN=1234567890:AAFxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
-# Cari user ID kamu di @userinfobot atau @getidsbot
 ADMIN_ID=123456789
-
-# ── MongoDB Atlas ──────────────────────────────────────
-# Connection string dari langkah 5d (ganti password!)
-MONGODB_URI=mongodb+srv://botuser:PASSWORDKAMU@ai-bot-cluster.xxxxx.mongodb.net/ai-bot?retryWrites=true&w=majority
-
-# ── Redis ──────────────────────────────────────────────
-# Jika Redis pakai password:
-REDIS_URL=redis://:PASSWORD_REDIS_KAMU@127.0.0.1:6379
-# Jika tanpa password:
-# REDIS_URL=redis://127.0.0.1:6379
-
-# ── Freepik API ────────────────────────────────────────
-# Daftar di freepik.com/api → buat API key
+MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/ai-bot?retryWrites=true&w=majority
 FREEPIK_API_KEY=FPSX_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
-# ── Hubify QRIS ────────────────────────────────────────
 HUBIFY_API_KEY=sk_xxxxxxxxxxxxxxxxxxxxxxxxxx
-# Buat secret acak untuk verifikasi webhook
 HUBIFY_WEBHOOK_SECRET=buat_string_acak_panjang_minimal_32_karakter
 HUBIFY_BASE_URL=https://qris.hubify.store/api
-
-# ── Webhook Server ─────────────────────────────────────
 WEBHOOK_PORT=3001
-# Domain atau subdomain yang sudah diarahkan ke VPS ini
 WEBHOOK_PUBLIC_URL=https://bot.domainmu.com
-
-# ── Storage ────────────────────────────────────────────
-UPLOAD_DIR=./uploads
-TEMP_DIR=./temp
-
-# ── BullMQ ─────────────────────────────────────────────
-MAX_ACTIVE_JOBS_PER_USER=3
 ```
 
-Simpan (`Ctrl+O`, `Enter`, `Ctrl+X`), lalu amankan file:
+> **Catatan:** `REDIS_URL` tidak perlu diisi — sudah di-set otomatis di `docker-compose.yml` ke container Redis internal.
+
+### 2e. Konfigurasi Domain (Proxy)
+
+1. Di resource → tab **Settings** / **Proxy**
+2. Service `bot` → set domain: `bot.domainmu.com`
+3. Port: `3001`
+4. Centang **Generate SSL** (Coolify pakai Let's Encrypt otomatis)
+
+### 2f. Deploy
+
+Klik **Deploy** → Coolify akan:
+- Build Docker image dari `Dockerfile`
+- Start 3 container: `bot`, `worker`, `redis`
+- Setup reverse proxy + SSL otomatis
+
+### 2g. Verifikasi
 
 ```bash
-chmod 600 .env
+# Health check
+curl https://bot.domainmu.com/health
+# → {"status":"ok","timestamp":"..."}
+
+# Test bot di Telegram
+# Buka bot kamu → /start
 ```
+
+### Auto Deploy
+
+Coolify mendukung auto-deploy saat push ke GitHub. Aktifkan di:
+- Resource → **Settings** → ✅ **Auto Deploy** → **Webhooks**
 
 ---
 
-## 8. Jalankan dengan PM2
+## 3. Deploy Manual dengan Docker Compose
 
-PM2 adalah process manager untuk Node.js — bot akan otomatis restart jika crash dan berjalan di background.
+Jika tidak pakai Coolify, bisa langsung dengan Docker Compose di VPS.
 
-### Install PM2
-
-```bash
-npm install -g pm2
-```
-
-### Buat konfigurasi PM2
+### 3a. Persiapan VPS
 
 ```bash
-cd ~/bot
-nano ecosystem.config.js
+# Update sistem
+apt update && apt upgrade -y
+
+# Install Docker
+curl -fsSL https://get.docker.com | bash
+
+# Install Docker Compose plugin
+apt install -y docker-compose-plugin
+
+# Verifikasi
+docker --version    # → Docker version 27.x.x
+docker compose version  # → Docker Compose version v2.x.x
 ```
 
-Isi dengan:
-
-```js
-module.exports = {
-  apps: [
-    {
-      name: 'ai-bot',
-      script: 'src/index.js',
-      cwd: '/home/botuser/bot',
-      instances: 1,
-      autorestart: true,
-      watch: false,
-      max_memory_restart: '500M',
-      env: {
-        NODE_ENV: 'production',
-      },
-      error_file: './logs/bot-error.log',
-      out_file: './logs/bot-out.log',
-      log_date_format: 'YYYY-MM-DD HH:mm:ss',
-    },
-    {
-      name: 'ai-worker',
-      script: 'src/workers/index.js',
-      cwd: '/home/botuser/bot',
-      instances: 1,
-      autorestart: true,
-      watch: false,
-      max_memory_restart: '500M',
-      env: {
-        NODE_ENV: 'production',
-      },
-      error_file: './logs/worker-error.log',
-      out_file: './logs/worker-out.log',
-      log_date_format: 'YYYY-MM-DD HH:mm:ss',
-    },
-  ],
-};
-```
-
-Simpan, lalu buat folder logs:
+### 3b. Clone & Setup
 
 ```bash
-mkdir -p ~/bot/logs
+cd /opt
+git clone https://github.com/USERNAME/REPO_NAME.git ai-bot
+cd ai-bot
+
+# Buat .env dari template
+cp .env.example .env
+nano .env
+# → Isi semua variabel (lihat Bagian 6)
 ```
 
-### Jalankan bot dan worker
+### 3c. Jalankan
 
 ```bash
-cd ~/bot
-pm2 start ecosystem.config.js
+# Build dan start semua container
+docker compose up -d --build
 
-# Lihat status
-pm2 status
+# Cek status
+docker compose ps
 
-# Lihat log realtime
-pm2 logs
+# Lihat logs
+docker compose logs -f
 
-# Lihat log per proses
-pm2 logs ai-bot
-pm2 logs ai-worker
+# Lihat log per service
+docker compose logs -f bot
+docker compose logs -f worker
 ```
 
-### Aktifkan auto-start setelah reboot VPS
+### 3d. Update Deployment
 
 ```bash
-pm2 startup
-# PM2 akan print perintah → copy dan jalankan perintahnya, contoh:
-# sudo env PATH=$PATH:/home/botuser/.nvm/versions/node/v20.x.x/bin pm2 startup systemd -u botuser --hp /home/botuser
-
-pm2 save
+cd /opt/ai-bot
+git pull origin main
+docker compose up -d --build
 ```
 
----
+### 3e. Setup Reverse Proxy (Nginx)
 
-## 9. Setup Nginx + SSL (Webhook)
-
-Webhook Hubify membutuhkan endpoint HTTPS publik. Nginx sebagai reverse proxy ke port 3001.
-
-### 9a. Konfigurasi DNS
-
-Di panel domain kamu, buat A record:
-```
-bot.domainmu.com  →  IP_VPS_KAMU
-```
-
-Tunggu propagasi DNS (biasanya 1–5 menit di Cloudflare, bisa lebih lama di provider lain).
-
-### 9b. Konfigurasi Nginx
+Jika butuh domain + SSL di depan Docker:
 
 ```bash
-sudo nano /etc/nginx/sites-available/ai-bot
+apt install -y nginx certbot python3-certbot-nginx
 ```
 
-Isi:
+Buat konfigurasi Nginx:
 
-```nginx
+```bash
+cat > /etc/nginx/sites-available/ai-bot << 'EOF'
 server {
     listen 80;
     server_name bot.domainmu.com;
@@ -405,295 +201,390 @@ server {
     location / {
         proxy_pass http://127.0.0.1:3001;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
         proxy_read_timeout 120s;
-        proxy_connect_timeout 10s;
         client_max_body_size 10M;
     }
 }
-```
+EOF
 
-Aktifkan konfigurasi:
+ln -sf /etc/nginx/sites-available/ai-bot /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
 
-```bash
-sudo ln -s /etc/nginx/sites-available/ai-bot /etc/nginx/sites-enabled/
-sudo nginx -t          # Test konfigurasi
-sudo systemctl reload nginx
-```
-
-### 9c. Install SSL Certificate (Let's Encrypt)
-
-```bash
-sudo certbot --nginx -d bot.domainmu.com
-```
-
-Ikuti instruksi:
-- Masukkan email
-- Setujui Terms of Service (A)
-- Pilih apakah mau share email (N)
-- Certbot otomatis update konfigurasi Nginx ke HTTPS
-
-Cek SSL auto-renewal:
-
-```bash
-sudo certbot renew --dry-run
-```
-
-### 9d. Verifikasi
-
-```bash
-curl https://bot.domainmu.com/health
-# → {"status":"ok","timestamp":"2024-..."}
+# SSL otomatis
+certbot --nginx -d bot.domainmu.com
 ```
 
 ---
 
-## 10. Daftarkan Webhook ke Hubify
+## 4. Deploy Manual Tanpa Docker (VPS)
 
-Setelah SSL aktif, daftarkan URL webhook di dashboard Hubify:
+Metode tradisional tanpa Docker — install langsung di VPS.
 
-1. Login ke dashboard Hubify
-2. Masuk ke **Settings → Webhooks**
-3. Tambahkan endpoint:
+### 4a. Install Node.js
+
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+source ~/.bashrc
+nvm install 20
+nvm alias default 20
+```
+
+### 4b. Install Redis
+
+```bash
+apt install -y redis-server
+sudo systemctl enable redis-server
+sudo systemctl start redis-server
+
+# Test
+redis-cli ping  # → PONG
+```
+
+Opsional — set password Redis:
+
+```bash
+sudo nano /etc/redis/redis.conf
+# Cari dan ubah: requirepass PASSWORD_REDIS_KAMU
+# Simpan, lalu:
+sudo systemctl restart redis-server
+```
+
+Jika pakai password, format di `.env`:
+```
+REDIS_URL=redis://:PASSWORD_REDIS_KAMU@127.0.0.1:6379
+```
+
+### 4c. Clone & Install
+
+```bash
+cd /opt
+git clone https://github.com/USERNAME/REPO_NAME.git ai-bot
+cd ai-bot
+npm ci --omit=dev
+cp .env.example .env
+nano .env
+# → Isi semua variabel (lihat Bagian 6)
+mkdir -p uploads temp logs
+```
+
+### 4d. Jalankan dengan PM2
+
+```bash
+npm install -g pm2
+
+# Buat konfigurasi PM2
+cat > ecosystem.config.js << 'EOF'
+module.exports = {
+  apps: [
+    {
+      name: 'ai-bot',
+      script: 'src/index.js',
+      instances: 1,
+      autorestart: true,
+      max_memory_restart: '500M',
+      env: { NODE_ENV: 'production' },
+      error_file: './logs/bot-error.log',
+      out_file: './logs/bot-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+    },
+    {
+      name: 'ai-worker',
+      script: 'src/workers/index.js',
+      instances: 1,
+      autorestart: true,
+      max_memory_restart: '500M',
+      env: { NODE_ENV: 'production' },
+      error_file: './logs/worker-error.log',
+      out_file: './logs/worker-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+    },
+  ],
+};
+EOF
+
+# Start
+pm2 start ecosystem.config.js
+pm2 save
+pm2 startup
+```
+
+### 4e. Setup Nginx + SSL
+
+Sama seperti langkah 3e di atas.
+
+---
+
+## 5. Setup MongoDB Atlas
+
+### 5a. Buat Akun & Cluster
+
+1. Buka [cloud.mongodb.com](https://cloud.mongodb.com) → daftar/login
+2. **Create** → pilih **M0 Free** (gratis)
+3. Region: **Singapore** (ap-southeast-1)
+4. Nama cluster: `ai-bot-cluster`
+5. Klik **Create Deployment**
+
+### 5b. Buat Database User
+
+1. **Database Access** → **Add New Database User**
+2. Method: Password
+3. Username: `botuser` → Auto-generate password → **copy sekarang**
+4. Privileges: **Read and write to any database**
+5. **Add User**
+
+### 5c. Whitelist IP
+
+1. **Network Access** → **Add IP Address**
+2. Masukkan IP VPS (`curl ifconfig.me` dari VPS)
+3. Atau klik **Allow Access from Anywhere** (0.0.0.0/0) jika IP dinamis
+
+### 5d. Ambil Connection String
+
+1. Clusters → **Connect** → **Drivers** → Node.js
+2. Copy string, ganti `<password>` dan tambahkan nama DB:
+   ```
+   mongodb+srv://botuser:PASSWORD@ai-bot-cluster.xxxxx.mongodb.net/ai-bot?retryWrites=true&w=majority
+   ```
+
+---
+
+## 6. Konfigurasi .env
+
+Referensi semua environment variables:
+
+```env
+# ── Telegram ─────────────────────────────
+BOT_TOKEN=1234567890:AAFxxxxxxxxxxxxx       # Dari @BotFather
+ADMIN_ID=123456789                          # Telegram user ID admin
+
+# ── MongoDB ──────────────────────────────
+MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/ai-bot?retryWrites=true&w=majority
+
+# ── Redis ────────────────────────────────
+REDIS_URL=redis://localhost:6379            # Untuk Docker: otomatis di-override
+
+# ── Freepik API ──────────────────────────
+FREEPIK_API_KEY=FPSX_xxxxxxxxxxxxxxxxxxxxxxx
+
+# ── Hubify QRIS ─────────────────────────
+HUBIFY_API_KEY=sk_xxxxxxxxxxxxxxxxxxxxxxxxxx
+HUBIFY_WEBHOOK_SECRET=string_acak_32_karakter_minimal
+HUBIFY_BASE_URL=https://qris.hubify.store/api
+
+# ── Webhook ──────────────────────────────
+WEBHOOK_PORT=3001
+WEBHOOK_PUBLIC_URL=https://bot.domainmu.com
+
+# ── Opsional ─────────────────────────────
+UPLOAD_DIR=./uploads
+TEMP_DIR=./temp
+MAX_ACTIVE_JOBS_PER_USER=3
+```
+
+> **Penting:** Jangan commit file `.env` ke Git! Sudah ada di `.gitignore`.
+
+---
+
+## 7. Setup Domain & SSL
+
+### Jika deploy via Coolify
+
+SSL otomatis — cukup set domain di Coolify dashboard (lihat langkah 2e).
+
+### Jika deploy via Docker Compose / Manual
+
+1. Arahkan domain ke IP VPS (A record di DNS):
+   ```
+   bot.domainmu.com  →  IP_VPS
+   ```
+2. Setup Nginx reverse proxy + Certbot (lihat langkah 3e)
+3. Verifikasi:
+   ```bash
+   curl https://bot.domainmu.com/health
+   ```
+
+---
+
+## 8. Daftarkan Webhook ke Hubify
+
+Setelah domain + SSL aktif:
+
+1. Login dashboard Hubify → **Settings → Webhooks**
+2. Tambahkan endpoint:
    ```
    https://bot.domainmu.com/webhook/hubify
    ```
-4. Copy **Webhook Secret** yang diberikan Hubify
-5. Update `.env`:
-   ```env
-   HUBIFY_WEBHOOK_SECRET=secret_dari_hubify
-   ```
-6. Restart bot:
+3. Copy **Webhook Secret** → isi ke `HUBIFY_WEBHOOK_SECRET` di env
+4. Restart bot:
    ```bash
-   pm2 restart ai-bot
+   # Coolify: klik Re-deploy di dashboard
+   # Docker: docker compose restart bot
+   # PM2: pm2 restart ai-bot
    ```
 
-Untuk **MacroDroid** (notifikasi HP Android):
-- Endpoint: `https://bot.domainmu.com/webhook-notification`
-- Method: `POST`
-- Body JSON:
-  ```json
-  {"message": "Pembayaran Rp 29.127 dari NAMA berhasil", "source": "gopay"}
-  ```
-
 ---
 
-## 11. Perintah Sehari-hari
+## 9. Perintah Sehari-hari
 
-### Monitor
+### Docker Compose
 
 ```bash
-# Status semua proses
-pm2 status
+cd /opt/ai-bot
 
-# Log realtime
-pm2 logs
-
-# Log bot saja
-pm2 logs ai-bot --lines 100
-
-# Log worker saja
-pm2 logs ai-worker --lines 100
-
-# Monitor CPU/RAM
-pm2 monit
+docker compose ps                    # Status container
+docker compose logs -f               # Log semua service
+docker compose logs -f bot           # Log bot saja
+docker compose logs -f worker        # Log worker saja
+docker compose restart               # Restart semua
+docker compose down                  # Stop semua
+docker compose up -d --build         # Rebuild + start
 ```
 
-### Deploy Update
+### PM2 (tanpa Docker)
 
 ```bash
-cd ~/bot
-
-# Jika pakai Git
-git pull origin main
-
-# Install dependensi baru (jika ada perubahan package.json)
-npm install --production
-
-# Restart semua
-pm2 restart all
-
-# Atau restart per proses
-pm2 restart ai-bot
-pm2 restart ai-worker
+pm2 status                           # Status proses
+pm2 logs                             # Log realtime
+pm2 logs ai-bot --lines 100         # Log bot
+pm2 logs ai-worker --lines 100      # Log worker
+pm2 restart all                      # Restart semua
+pm2 monit                            # Monitor CPU/RAM
 ```
 
-### Kelola Bot
+### Update Deployment
 
 ```bash
-# Stop semua
-pm2 stop all
+# Docker Compose
+cd /opt/ai-bot && git pull && docker compose up -d --build
 
-# Start semua
-pm2 start all
+# PM2
+cd /opt/ai-bot && git pull && npm ci --omit=dev && pm2 restart all
 
-# Reload tanpa downtime (zero-downtime restart)
-pm2 reload all
-
-# Hapus dari PM2
-pm2 delete all
+# Coolify: otomatis jika auto-deploy aktif, atau klik Re-deploy
 ```
 
-### Redis
+### Cleanup File Lama
 
 ```bash
-# Masuk ke Redis CLI
-redis-cli -a PASSWORD_REDIS_KAMU
+# Docker — masuk ke container
+docker compose exec bot sh -c 'find /app/uploads -type f -mtime +1 -delete'
 
-# Cek jumlah session aktif
-KEYS tgbot:sess:*
+# PM2 / manual
+find /opt/ai-bot/uploads -type f -mtime +1 -delete
 
-# Cek active jobs counter user tertentu
-GET active_jobs:USER_ID
-
-# Flush semua session (hati-hati!)
-# DEL $(redis-cli KEYS "tgbot:sess:*")
-
-# Keluar
-exit
-```
-
-### Disk — bersihkan file hasil generate lama
-
-```bash
-# Lihat ukuran folder uploads
-du -sh ~/bot/uploads/
-
-# Hapus file lebih dari 1 hari
-find ~/bot/uploads/ -type f -mtime +1 -delete
-
-# Buat cron job otomatis (setiap hari jam 03:00)
-crontab -e
-# Tambahkan baris:
-# 0 3 * * * find /home/botuser/bot/uploads/ -type f -mtime +1 -delete
+# Auto-cleanup via cron (setiap hari jam 3 pagi)
+# crontab -e → tambahkan:
+# 0 3 * * * find /opt/ai-bot/uploads -type f -mtime +1 -delete
 ```
 
 ---
 
-## 12. Troubleshooting
+## 10. Troubleshooting
 
 ### Bot tidak merespons
 
 ```bash
-# Cek apakah proses berjalan
-pm2 status
+# Docker
+docker compose ps                     # Semua container harus "Up"
+docker compose logs bot --tail 50     # Cek error
 
-# Cek log error
+# PM2
+pm2 status                            # Harus "online"
 pm2 logs ai-bot --err --lines 50
 
-# Cek apakah token valid
+# Test token
 curl https://api.telegram.org/botTOKEN_KAMU/getMe
 ```
 
-### Redis gagal konek
+### Redis gagal
 
 ```bash
-# Cek status Redis
-sudo systemctl status redis-server
+# Docker — Redis health check
+docker compose ps    # redis harus "healthy"
+docker compose exec redis redis-cli ping  # → PONG
 
-# Test koneksi manual
-redis-cli -a PASSWORD ping
-
-# Cek log Redis
-sudo journalctl -u redis-server -n 50
+# PM2 / manual
+systemctl status redis-server
+redis-cli ping
 ```
 
 ### MongoDB gagal konek
 
 ```bash
-# Cek connection string di .env
-cat ~/bot/.env | grep MONGODB
+# Cek connection string
+grep MONGODB .env
 
-# Test koneksi dari VPS (butuh mongosh)
-# npm install -g mongosh
-mongosh "mongodb+srv://botuser:PASS@cluster.mongodb.net/ai-bot"
-
-# Jika timeout → cek IP Whitelist di MongoDB Atlas
-# Network Access → pastikan IP VPS terdaftar
+# Cek IP whitelist di MongoDB Atlas → Network Access
+# Pastikan IP VPS terdaftar (atau 0.0.0.0/0)
 ```
 
 ### Webhook tidak diterima
 
 ```bash
-# Test endpoint dari luar
+# Test endpoint
 curl -X POST https://bot.domainmu.com/webhook/hubify \
   -H "Content-Type: application/json" \
-  -H "X-Webhook-Signature: test" \
   -d '{"test":true}'
 
-# Cek Nginx error log
-sudo tail -f /var/log/nginx/error.log
+# Docker: cek port forwarding
+docker compose ps   # Port 3001 harus ter-forward
 
-# Cek apakah port 3001 aktif
-ss -tlnp | grep 3001
+# Cek Nginx
+nginx -t && tail -20 /var/log/nginx/error.log
 ```
 
 ### Worker tidak memproses job
 
 ```bash
-# Cek log worker
-pm2 logs ai-worker --lines 100
+# Docker
+docker compose logs worker --tail 50
 
-# Pastikan Redis berjalan (BullMQ butuh Redis)
-redis-cli ping
+# Cek Redis queue
+docker compose exec redis redis-cli KEYS "bull:*"
 
-# Cek antrian di Redis
-redis-cli -a PASS
-KEYS bull:*
-```
-
-### Port 3001 sudah dipakai
-
-```bash
-# Cari proses yang pakai port 3001
-sudo lsof -i :3001
-
-# Ganti port di .env
-WEBHOOK_PORT=3002
-# Dan update konfigurasi Nginx ke port yang baru
-pm2 restart ai-bot
-sudo systemctl reload nginx
+# PM2
+pm2 logs ai-worker --lines 50
 ```
 
 ---
 
-## Struktur File di VPS
+## Struktur File
 
 ```
-/home/botuser/bot/
-├── .env                    ← Konfigurasi (jangan commit ke Git!)
-├── ecosystem.config.js     ← Konfigurasi PM2
+project/
+├── .env.example            ← Template environment variables
+├── .env                    ← Config aktual (JANGAN commit!)
+├── .dockerignore           ← Exclude file dari Docker build
+├── .gitignore
+├── Dockerfile              ← Docker image definition
+├── docker-compose.yml      ← Multi-container setup
 ├── package.json
 ├── src/
 │   ├── index.js            ← Entry point bot
-│   ├── workers/index.js    ← Entry point worker
-│   └── ...
-├── uploads/                ← File hasil generate (auto-cleanup)
-├── temp/                   ← File temporary
-└── logs/                   ← Log PM2
-    ├── bot-out.log
-    ├── bot-error.log
-    ├── worker-out.log
-    └── worker-error.log
+│   ├── bot/                ← Telegram bot handlers & menus
+│   ├── config/             ← Configuration
+│   ├── models/             ← Mongoose models
+│   ├── services/           ← Freepik API, Hubify, webhook server
+│   ├── utils/              ← Redis, file helper, user helper
+│   └── workers/            ← BullMQ job processors
+├── uploads/                ← Hasil generate (auto-cleanup)
+└── temp/                   ← File temporary
 ```
 
 ---
 
 ## Checklist Sebelum Go-Live
 
-- [ ] Node.js v18+ terinstall
-- [ ] Redis berjalan dan bisa diakses
-- [ ] MongoDB Atlas cluster aktif, IP VPS di-whitelist
-- [ ] `.env` terisi lengkap, semua API key valid
-- [ ] `pm2 status` menunjukkan `ai-bot` dan `ai-worker` **online**
-- [ ] `https://bot.domainmu.com/health` mengembalikan `{"status":"ok"}`
-- [ ] Webhook Hubify terdaftar dan secret sudah di-set di `.env`
+- [ ] MongoDB Atlas cluster aktif + IP di-whitelist
+- [ ] Semua API key valid (BOT_TOKEN, FREEPIK, HUBIFY)
+- [ ] `.env` terisi lengkap
+- [ ] Container/proses berjalan (bot + worker + redis)
+- [ ] `https://bot.domainmu.com/health` → `{"status":"ok"}`
+- [ ] Webhook Hubify terdaftar + secret sudah di-set
 - [ ] Test `/start` di Telegram — bot merespons
-- [ ] Test generate gambar gratis — berhasil dikirim
-- [ ] Test upgrade plan — QRIS QR muncul
+- [ ] Test generate gambar — hasilnya dikirim ke chat
+- [ ] Test upgrade plan — QR QRIS muncul

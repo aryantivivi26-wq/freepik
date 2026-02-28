@@ -1,6 +1,6 @@
 'use strict';
 
-const { Telegraf } = require('telegraf');
+const { Telegram } = require('telegraf');
 const { Job: JobModel, User } = require('../models');
 const { decrementActiveJobs } = require('../utils/redis');
 const { deleteFile } = require('../utils/fileHelper');
@@ -13,14 +13,14 @@ const {
 } = require('../services/freepik');
 const config = require('../config');
 
-// Singleton bot instance for worker to send results
-let workerBot = null;
+// Singleton Telegram API client (lighter than full Telegraf bot instance)
+let telegramApi = null;
 
-function getWorkerBot() {
-  if (!workerBot) {
-    workerBot = new Telegraf(config.bot.token);
+function getTelegramApi() {
+  if (!telegramApi) {
+    telegramApi = new Telegram(config.bot.token);
   }
-  return workerBot;
+  return telegramApi;
 }
 
 // ─────────────────────────────────────────
@@ -33,7 +33,7 @@ function getWorkerBot() {
  */
 async function processJob(bullJob) {
   const { userId, chatId, messageId, prompt, model, options, jobId, type } = bullJob.data;
-  const bot = getWorkerBot();
+  const telegram = getTelegramApi();
 
   console.log(`[Worker] Processing ${type} job ${jobId} for user ${userId}`);
 
@@ -72,11 +72,11 @@ async function processJob(bullJob) {
     const caption = buildCaption(type, model, prompt, options);
 
     if (type === 'image') {
-      await bot.telegram.sendPhoto(chatId, { source: filePath }, { caption, parse_mode: 'Markdown' });
+      await telegram.sendPhoto(chatId, { source: filePath }, { caption, parse_mode: 'Markdown' });
     } else if (type === 'video') {
-      await bot.telegram.sendVideo(chatId, { source: filePath }, { caption, parse_mode: 'Markdown' });
+      await telegram.sendVideo(chatId, { source: filePath }, { caption, parse_mode: 'Markdown' });
     } else if (type === 'music' || type === 'tts') {
-      await bot.telegram.sendAudio(chatId, { source: filePath }, { caption, parse_mode: 'Markdown' });
+      await telegram.sendAudio(chatId, { source: filePath }, { caption, parse_mode: 'Markdown' });
     }
 
     // ── Update job as done ────────────────
@@ -109,7 +109,7 @@ async function processJob(bullJob) {
 
       await refundCredit(userId, type);
       try {
-        await bot.telegram.sendMessage(
+        await telegram.sendMessage(
           chatId,
           `❌ *Generasi ${typeLabel(type)} gagal*\n\n` +
           `Error: ${err.message}\n\n` +
@@ -136,8 +136,7 @@ async function processJob(bullJob) {
 
 async function refundCredit(userId, type) {
   try {
-    const user = await User.findOne({ telegramId: userId });
-    if (user) await user.refundCredit(type);
+    await User.atomicRefundCredit(userId, type);
   } catch (err) {
     console.error(`[Worker] Failed to refund credit for user ${userId}:`, err.message);
   }
