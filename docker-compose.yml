@@ -57,9 +57,9 @@ services:
     command: >
       sh -c '
         if [ -n "$REDIS_PASSWORD" ]; then
-          redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru --requirepass "$REDIS_PASSWORD"
+          redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction --requirepass "$REDIS_PASSWORD"
         else
-          redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+          redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
         fi
       '
     environment:

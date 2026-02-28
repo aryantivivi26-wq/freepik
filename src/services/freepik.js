@@ -13,6 +13,21 @@ const freepikClient = axios.create({
   timeout: 60000,
 });
 
+// Interceptor: log detailed Freepik API errors
+freepikClient.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    if (err.response) {
+      const { status, data } = err.response;
+      const detail = typeof data === 'object' ? JSON.stringify(data) : data;
+      console.error(`[Freepik] API ${status}: ${detail}`);
+      const msg = data?.message || data?.error?.message || data?.detail || `Request failed with status code ${status}`;
+      throw new Error(msg);
+    }
+    throw err;
+  }
+);
+
 // ─────────────────────────────────────────
 // POLLING HELPER
 // ─────────────────────────────────────────
@@ -69,19 +84,20 @@ const SIZE_MAP = {
 async function generateImageClassic(prompt, size = 'square_1_1') {
   const imageSize = SIZE_MAP[size] || 'square_1_1';
 
-  const response = await freepikClient.post('/ai/text-to-image', {
+  const body = {
     prompt,
     negative_prompt: 'blur, distort, low quality, ugly, watermark',
     guidance_scale: 2,
     num_images: 1,
-    seed: 42,
     image: { size: imageSize },
     styling: {
       style: 'photo',
       effects: { color: 'auto', lighting: 'auto', framing: 'auto' },
     },
-    filter_nsfw: true,
-  });
+  };
+
+  console.log('[Freepik] Classic Fast request:', JSON.stringify(body));
+  const response = await freepikClient.post('/ai/text-to-image', body);
 
   const imageData = response.data?.data?.[0];
   if (!imageData) throw new Error('No image data returned from Classic Fast');
