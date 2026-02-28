@@ -15,7 +15,7 @@ services:
     command: ["node", "src/index.js"]
     env_file: .env
     environment:
-      - REDIS_URL=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379
+      - REDIS_URL=redis://redis:6379
     ports:
       - "${WEBHOOK_PORT:-3001}:${WEBHOOK_PORT:-3001}"
     volumes:
@@ -40,7 +40,7 @@ services:
     command: ["node", "src/workers/index.js"]
     env_file: .env
     environment:
-      - REDIS_URL=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379
+      - REDIS_URL=redis://redis:6379
     volumes:
       - uploads-data:/app/uploads
       - temp-data:/app/temp
@@ -50,26 +50,24 @@ services:
       redis:
         condition: service_healthy
 
-  # ── Redis ──────────────────────────────────────────
+  # ── Redis (BullMQ requires noeviction policy!) ─────
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: >
-      sh -c '
-        if [ -n "$REDIS_PASSWORD" ]; then
-          redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction --requirepass "$REDIS_PASSWORD"
-        else
-          redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
-        fi
-      '
-    environment:
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - noeviction
     volumes:
       - redis-data:/data
     networks:
       - botnet
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli ${REDIS_PASSWORD:+-a $REDIS_PASSWORD} ping | grep -q PONG"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 10

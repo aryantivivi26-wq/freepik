@@ -93,7 +93,13 @@ async function processJob(bullJob) {
     console.log(`[Worker] Job ${jobId} completed successfully`);
 
   } catch (err) {
-    console.error(`[Worker] Job ${jobId} failed:`, err.message);
+    // Log full error detail for axios errors
+    if (err.response) {
+      const detail = typeof err.response.data === 'object' ? JSON.stringify(err.response.data) : err.response.data;
+      console.error(`[Worker] Job ${jobId} failed — HTTP ${err.response.status}: ${detail}`);
+    } else {
+      console.error(`[Worker] Job ${jobId} failed:`, err.message);
+    }
 
     // Update DB
     await JobModel.findOneAndUpdate({ jobId }, { status: 'failed', errorMsg: err.message });

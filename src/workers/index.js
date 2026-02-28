@@ -8,7 +8,10 @@ const { connectDB } = require('../models');
 const { processJob } = require('./processor');
 const { QUEUE_NAMES } = require('./queues');
 
+const WORKER_VERSION = '1.1.0';
+
 async function startWorkers() {
+  console.log(`⚙️  Starting Worker v${WORKER_VERSION}...`);
   await connectDB();
 
   const connection = getRedis();

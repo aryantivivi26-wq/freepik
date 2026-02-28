@@ -9,8 +9,10 @@ const { ensureDirs } = require('./utils/fileHelper');
 const { createBot } = require('./bot');
 const { startWebhookServer } = require('./services/webhookServer');
 
+const APP_VERSION = '1.1.0';
+
 async function main() {
-  console.log('🤖 Starting Telegram AI Generator Bot...');
+  console.log(`🤖 Starting Telegram AI Generator Bot v${APP_VERSION}...`);
 
   // ── Validate required env vars ────────────────────────
   const required = ['BOT_TOKEN', 'MONGODB_URI', 'FREEPIK_API_KEY', 'HUBIFY_API_KEY'];
