@@ -98,8 +98,7 @@ async function handleBuyPlan(ctx, plan) {
         } catch (tgErr) {
           console.error('[Payment] Failed to send QR image:', tgErr.message);
           await ctx.reply(
-            `❌ Gagal mengirim gambar QR ke Telegram. Silakan scan manual QRIS berikut di aplikasi e-wallet:
-    const txResult = await checkTransactionStatus(transactionId);
+            `❌ Gagal mengirim gambar QR ke Telegram. Silakan scan manual QRIS berikut di aplikasi e-wallet:\n<code>${txData.qrisContent || '-tidak ada-'}</code>`,
             { parse_mode: 'HTML' }
           );
           await ctx.reply(caption, { parse_mode: 'Markdown', ...paymentCheckKeyboard(txData.transactionId) });
