@@ -121,41 +121,67 @@ function createBot() {
   bot.command('broadcast', adminGuard, handleBroadcast);
 
   // ────────────────────────────────────────────────────
-  // KEYBOARD BUTTON HANDLERS (text messages)
+  // MAIN MENU INLINE BUTTON HANDLERS
   // ────────────────────────────────────────────────────
 
-  bot.hears('🖼 Generate Gambar', startImageFlow);
-  bot.hears('🎬 Generate Video', startVideoFlow);
-  bot.hears('🎵 Generate Musik', startMusicFlow);
-  bot.hears('🔊 Sound Effects', startSfxFlow);
-  bot.hears('🗣 Text-to-Speech', startTTSFlow);
+  bot.action('menu:image', async (ctx) => {
+    await ctx.answerCbQuery();
+    await startImageFlow(ctx);
+  });
 
-  bot.hears('👤 Profil Saya', async (ctx) => {
+  bot.action('menu:video', async (ctx) => {
+    await ctx.answerCbQuery();
+    await startVideoFlow(ctx);
+  });
+
+  bot.action('menu:music', async (ctx) => {
+    await ctx.answerCbQuery();
+    await startMusicFlow(ctx);
+  });
+
+  bot.action('menu:sfx', async (ctx) => {
+    await ctx.answerCbQuery();
+    await startSfxFlow(ctx);
+  });
+
+  bot.action('menu:tts', async (ctx) => {
+    await ctx.answerCbQuery();
+    await startTTSFlow(ctx);
+  });
+
+  bot.action('menu:profile', async (ctx) => {
+    await ctx.answerCbQuery();
     const user = ctx.state.user;
     if (!user) return ctx.reply('Profil tidak ditemukan.');
     await ctx.reply(formatUserProfile(user), { parse_mode: 'Markdown' });
   });
 
-  bot.hears('💎 Upgrade Plan', showPlans);
+  bot.action('menu:upgrade', async (ctx) => {
+    await ctx.answerCbQuery();
+    await showPlans(ctx);
+  });
 
-  bot.hears('❓ Bantuan', (ctx) => ctx.reply(
-    `❓ *Bantuan*\n\n` +
-    `*Cara penggunaan:*\n` +
-    `1. Pilih jenis konten dari menu\n` +
-    `2. Pilih model & opsi\n` +
-    `3. Kirim prompt/teks\n` +
-    `4. Tunggu hasilnya!\n\n` +
-    `*Credit sistem:*\n` +
-    `Setiap generasi membutuhkan 1 credit.\n` +
-    `Credit dikembalikan jika generasi gagal.\n\n` +
-    `*Rate limit:*\n` +
-    `Maksimal 3 job aktif per waktu.\n\n` +
-    `*Plans:*\n` +
-    `🆓 Free: Image×5, Video×2, Music×3, SFX×5, TTS×10\n` +
-    `🚀 Pro (Rp29k): Image×50, Video×20, Music×30, SFX×50, TTS×100\n` +
-    `♾️ Unlimited (Rp79k): Semua unlimited`,
-    { parse_mode: 'Markdown' }
-  ));
+  bot.action('menu:help', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.reply(
+      `❓ *Bantuan*\n\n` +
+      `*Cara penggunaan:*\n` +
+      `1. Pilih jenis konten dari menu\n` +
+      `2. Pilih model & opsi\n` +
+      `3. Kirim prompt/teks\n` +
+      `4. Tunggu hasilnya!\n\n` +
+      `*Credit sistem:*\n` +
+      `Setiap generasi membutuhkan 1 credit.\n` +
+      `Credit dikembalikan jika generasi gagal.\n\n` +
+      `*Rate limit:*\n` +
+      `Maksimal 3 job aktif per waktu.\n\n` +
+      `*Plans:*\n` +
+      `🆓 Free: Image×5, Video×2, Music×3, SFX×5, TTS×10\n` +
+      `🚀 Pro (Rp29k): Image×50, Video×20, Music×30, SFX×50, TTS×100\n` +
+      `♾️ Unlimited (Rp79k): Semua unlimited`,
+      { parse_mode: 'Markdown' }
+    );
+  });
 
   // ────────────────────────────────────────────────────
   // CALLBACK QUERY HANDLERS

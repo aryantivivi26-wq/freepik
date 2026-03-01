@@ -3,14 +3,24 @@
 const { Markup } = require('telegraf');
 
 function mainMenuKeyboard() {
-  return Markup.keyboard([
-    ['🖼 Generate Gambar', '🎬 Generate Video'],
-    ['🎵 Generate Musik', '🔊 Sound Effects'],
-    ['🗣 Text-to-Speech', '👤 Profil Saya'],
-    ['💎 Upgrade Plan', '❓ Bantuan'],
-  ])
-    .resize()
-    .persistent();
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback('🖼 Generate Gambar', 'menu:image'),
+      Markup.button.callback('🎬 Generate Video', 'menu:video'),
+    ],
+    [
+      Markup.button.callback('🎵 Generate Musik', 'menu:music'),
+      Markup.button.callback('🔊 Sound Effects', 'menu:sfx'),
+    ],
+    [
+      Markup.button.callback('🗣 Text-to-Speech', 'menu:tts'),
+      Markup.button.callback('👤 Profil Saya', 'menu:profile'),
+    ],
+    [
+      Markup.button.callback('💎 Upgrade Plan', 'menu:upgrade'),
+      Markup.button.callback('❓ Bantuan', 'menu:help'),
+    ],
+  ]);
 }
 
 async function sendMainMenu(ctx, text) {

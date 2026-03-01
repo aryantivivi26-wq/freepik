@@ -126,7 +126,6 @@ async function generateImageClassic(prompt, size = 'square_1_1') {
     guidance_scale: 2,
     num_images: 1,
     image: { size: SIZE_MAP[size] || 'square_1_1' },
-    styling: { style: 'photo', effects: { color: 'auto', lighting: 'auto', framing: 'auto' } },
   };
   console.log('[Freepik] Classic Fast request');
   const response = await freepikClient.post('/ai/text-to-image', body);
