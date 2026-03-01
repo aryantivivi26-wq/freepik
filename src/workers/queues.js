@@ -7,12 +7,14 @@ let imageQueue = null;
 let videoQueue = null;
 let musicQueue = null;
 let ttsQueue = null;
+let sfxQueue = null;
 
 const QUEUE_NAMES = {
   IMAGE: 'image-generation',
   VIDEO: 'video-generation',
   MUSIC: 'music-generation',
   TTS:   'tts-generation',
+  SFX:   'sfx-generation',
 };
 
 const DEFAULT_JOB_OPTIONS = {
@@ -54,16 +56,20 @@ function getTTSQueue() {
   return ttsQueue;
 }
 
+function getSFXQueue() {
+  if (!sfxQueue) {
+    sfxQueue = new Queue(QUEUE_NAMES.SFX, { connection: getConnection() });
+  }
+  return sfxQueue;
+}
+
 /**
  * Add a generation job to the appropriate queue.
- * @param {string} type - 'image'|'video'|'music'|'tts'
- * @param {object} payload - { userId, chatId, messageId, prompt, model, options, priority }
+ * @param {string} type - 'image'|'video'|'music'|'tts'|'sfx'
+ * @param {object} payload
  * @returns {Job} BullMQ job
  */
 async function enqueueJob(type, payload) {
-  // NOTE: jobId intentionally NOT set in BullMQ options — using payload.jobId only
-  // as a reference in the job data. Setting jobId in options causes BullMQ to
-  // treat it as a deduplication key and silently drop duplicate submissions.
   const jobOpts = {
     ...DEFAULT_JOB_OPTIONS,
     priority: payload.priority || 0,
@@ -74,6 +80,7 @@ async function enqueueJob(type, payload) {
     case 'video': return getVideoQueue().add('generate', payload, jobOpts);
     case 'music': return getMusicQueue().add('generate', payload, jobOpts);
     case 'tts':   return getTTSQueue().add('generate', payload, jobOpts);
+    case 'sfx':   return getSFXQueue().add('generate', payload, jobOpts);
     default:      throw new Error(`Unknown job type: ${type}`);
   }
 }
@@ -85,5 +92,6 @@ module.exports = {
   getVideoQueue,
   getMusicQueue,
   getTTSQueue,
+  getSFXQueue,
   enqueueJob,
 };

@@ -7,6 +7,7 @@ const creditsSchema = new mongoose.Schema({
   video: { type: Number, default: 2 },
   music: { type: Number, default: 3 },
   tts:   { type: Number, default: 10 },
+  sfx:   { type: Number, default: 5 },
 }, { _id: false });
 
 const userSchema = new mongoose.Schema({

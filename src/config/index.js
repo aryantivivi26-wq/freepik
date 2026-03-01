@@ -37,19 +37,19 @@ const config = {
     free: {
       name: 'Free',
       price: 0,
-      credits: { image: 5, video: 2, music: 3, tts: 10 },
+      credits: { image: 5, video: 2, music: 3, tts: 10, sfx: 5 },
       durationDays: null,
     },
     pro: {
       name: 'Pro',
       price: 29000,
-      credits: { image: 50, video: 20, music: 30, tts: 100 },
+      credits: { image: 50, video: 20, music: 30, tts: 100, sfx: 50 },
       durationDays: 30,
     },
     unlimited: {
       name: 'Unlimited',
       price: 79000,
-      credits: { image: 9999, video: 9999, music: 9999, tts: 9999 },
+      credits: { image: 9999, video: 9999, music: 9999, tts: 9999, sfx: 9999 },
       durationDays: 30,
     },
   },

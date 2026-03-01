@@ -4,16 +4,9 @@ const { Telegram } = require('telegraf');
 const { Job: JobModel, User } = require('../models');
 const { decrementActiveJobs } = require('../utils/redis');
 const { deleteFile } = require('../utils/fileHelper');
-const {
-  generateImageClassic,
-  generateImageMystic,
-  generateVideo,
-  generateMusic,
-  generateTTS,
-} = require('../services/freepik');
+const freepik = require('../services/freepik');
 const config = require('../config');
 
-// Singleton Telegram API client (lighter than full Telegraf bot instance)
 let telegramApi = null;
 
 function getTelegramApi() {
@@ -23,21 +16,48 @@ function getTelegramApi() {
   return telegramApi;
 }
 
+// ── IMAGE MODEL DISPATCH ──────────────────
+async function processImage(prompt, model, options) {
+  const size = options?.size || 'square_1_1';
+  switch (model) {
+    case 'mystic':       return freepik.generateImageMystic(prompt);
+    case 'flux_dev':     return freepik.generateImageFluxDev(prompt, size);
+    case 'flux_2_pro':   return freepik.generateImageFlux2Pro(prompt, size);
+    case 'flux_2_klein': return freepik.generateImageFlux2Klein(prompt, size);
+    case 'flux_kontext': return freepik.generateImageFluxKontextPro(prompt, size);
+    case 'hyperflux':    return freepik.generateImageHyperFlux(prompt, size);
+    case 'seedream':     return freepik.generateImageSeedream(prompt, size);
+    case 'seedream_v5':  return freepik.generateImageSeedreamV5(prompt, size);
+    case 'z_image':      return freepik.generateImageZImage(prompt, size);
+    default:             return freepik.generateImageClassic(prompt, size); // classic_fast
+  }
+}
+
+// ── VIDEO MODEL DISPATCH ──────────────────
+async function processVideo(prompt, model, options) {
+  const aspectRatio = options?.aspectRatio || '16:9';
+  const duration = options?.duration || '5';
+  switch (model) {
+    case 'kling_std':      return freepik.generateVideo(prompt, { model: 'std', aspectRatio, duration });
+    case 'kling_omni_pro': return freepik.generateVideoKlingOmni(prompt, { model: 'pro', aspectRatio, duration });
+    case 'kling_omni_std': return freepik.generateVideoKlingOmni(prompt, { model: 'std', aspectRatio, duration });
+    case 'runway':         return freepik.generateVideoRunway(prompt, { aspectRatio, duration });
+    case 'wan':            return freepik.generateVideoWan(prompt, { aspectRatio });
+    case 'seedance':       return freepik.generateVideoSeedance(prompt, { aspectRatio, duration });
+    default:               return freepik.generateVideo(prompt, { model: 'pro', aspectRatio, duration }); // kling_pro
+  }
+}
+
 // ─────────────────────────────────────────
 // MAIN PROCESSOR
 // ─────────────────────────────────────────
 
-/**
- * Process a generation job from BullMQ.
- * @param {import('bullmq').Job} bullJob
- */
 async function processJob(bullJob) {
   const { userId, chatId, messageId, prompt, model, options, jobId, type } = bullJob.data;
   const telegram = getTelegramApi();
 
-  console.log(`[Worker] Processing ${type} job ${jobId} for user ${userId}`);
+  console.log(`[Worker] Processing ${type} job ${jobId} (model: ${model}) for user ${userId}`);
 
-  // Update job status in DB
   await JobModel.findOneAndUpdate({ jobId }, { status: 'processing', attempts: bullJob.attemptsMade + 1 });
 
   let filePath = null;
@@ -45,25 +65,18 @@ async function processJob(bullJob) {
   try {
     // ── Generate content ──────────────────
     if (type === 'image') {
-      if (model === 'mystic') {
-        filePath = await generateImageMystic(prompt);
-      } else {
-        // classic_fast
-        const size = options?.size || 'square_1_1';
-        filePath = await generateImageClassic(prompt, size);
-      }
+      filePath = await processImage(prompt, model, options);
     } else if (type === 'video') {
-      filePath = await generateVideo(prompt, {
-        model: model === 'kling_std' ? 'std' : 'pro',
-        aspectRatio: options?.aspectRatio || '16:9',
-        duration: options?.duration || '5',
-      });
+      filePath = await processVideo(prompt, model, options);
     } else if (type === 'music') {
       const duration = parseInt(options?.duration || '30', 10);
-      filePath = await generateMusic(prompt, duration);
+      filePath = await generateContent(() => freepik.generateMusic(prompt, duration));
+    } else if (type === 'sfx') {
+      const duration = parseInt(options?.duration || '10', 10);
+      filePath = await generateContent(() => freepik.generateSFX(prompt, duration));
     } else if (type === 'tts') {
       const voice = options?.voice || 'rachel';
-      filePath = await generateTTS(prompt, voice);
+      filePath = await generateContent(() => freepik.generateTTS(prompt, voice));
     } else {
       throw new Error(`Unknown job type: ${type}`);
     }
@@ -75,25 +88,20 @@ async function processJob(bullJob) {
       await telegram.sendPhoto(chatId, { source: filePath }, { caption, parse_mode: 'Markdown' });
     } else if (type === 'video') {
       await telegram.sendVideo(chatId, { source: filePath }, { caption, parse_mode: 'Markdown' });
-    } else if (type === 'music' || type === 'tts') {
+    } else if (type === 'music' || type === 'sfx' || type === 'tts') {
       await telegram.sendAudio(chatId, { source: filePath }, { caption, parse_mode: 'Markdown' });
     }
 
-    // ── Update job as done ────────────────
     await JobModel.findOneAndUpdate({ jobId }, { status: 'done', resultPath: filePath });
-
-    // ── Decrement active jobs counter (success path — exactly once) ───
     await decrementActiveJobs(userId);
 
-    // ── Schedule file cleanup after sending ───────────────────────────
     if (filePath) {
-      setTimeout(() => deleteFile(filePath), 60000); // delete after 1 min
+      setTimeout(() => deleteFile(filePath), 60000);
     }
 
     console.log(`[Worker] Job ${jobId} completed successfully`);
 
   } catch (err) {
-    // Log full error detail for axios errors
     if (err.response) {
       const detail = typeof err.response.data === 'object' ? JSON.stringify(err.response.data) : err.response.data;
       console.error(`[Worker] Job ${jobId} failed — HTTP ${err.response.status}: ${detail}`);
@@ -101,25 +109,18 @@ async function processJob(bullJob) {
       console.error(`[Worker] Job ${jobId} failed:`, err.message);
     }
 
-    // Update DB
     await JobModel.findOneAndUpdate({ jobId }, { status: 'failed', errorMsg: err.message });
 
-    // Only decrement + refund + notify on the FINAL attempt.
-    // On earlier attempts BullMQ will retry and the slot must stay occupied.
     const maxAttempts = bullJob.opts?.attempts || 3;
     const isFinalAttempt = bullJob.attemptsMade + 1 >= maxAttempts;
 
     if (isFinalAttempt) {
-      // Decrement active jobs counter (final failure — exactly once)
       await decrementActiveJobs(userId);
-
       await refundCredit(userId, type);
       try {
         await telegram.sendMessage(
           chatId,
-          `❌ *Generasi ${typeLabel(type)} gagal*\n\n` +
-          `Error: ${err.message}\n\n` +
-          `Credit kamu telah dikembalikan.`,
+          `❌ *Generasi ${typeLabel(type)} gagal*\n\nError: ${err.message}\n\nCredit kamu telah dikembalikan.`,
           { parse_mode: 'Markdown' }
         );
       } catch (sendErr) {
@@ -127,18 +128,22 @@ async function processJob(bullJob) {
       }
     }
 
-    // Cleanup temp file on failure too
     if (filePath) {
       setTimeout(() => deleteFile(filePath), 5000);
     }
 
-    throw err; // Let BullMQ handle retry
+    throw err;
   }
 }
 
 // ─────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────
+
+/** Simple wrapper for direct calls (music/sfx/tts) */
+async function generateContent(fn) {
+  return fn();
+}
 
 async function refundCredit(userId, type) {
   try {
@@ -149,8 +154,26 @@ async function refundCredit(userId, type) {
 }
 
 function typeLabel(type) {
-  const labels = { image: 'Gambar', video: 'Video', music: 'Musik', tts: 'TTS' };
+  const labels = { image: 'Gambar', video: 'Video', music: 'Musik', tts: 'TTS', sfx: 'Sound Effect' };
   return labels[type] || type;
+}
+
+const IMAGE_MODEL_LABELS = {
+  classic_fast: 'Classic Fast', mystic: 'Mystic 2K', flux_dev: 'Flux Dev',
+  flux_2_pro: 'Flux 2 Pro', flux_2_klein: 'Flux 2 Klein', flux_kontext: 'Flux Kontext Pro',
+  hyperflux: 'HyperFlux', seedream: 'Seedream v4.5', seedream_v5: 'Seedream v5 Lite', z_image: 'Z-Image',
+};
+
+const VIDEO_MODEL_LABELS = {
+  kling_pro: 'Kling v3 Pro', kling_std: 'Kling v3 Std',
+  kling_omni_pro: 'Kling Omni Pro', kling_omni_std: 'Kling Omni Std',
+  runway: 'Runway Gen 4.5', wan: 'Wan 2.5', seedance: 'Seedance 1.5 Pro',
+};
+
+function getModelLabel(type, model) {
+  if (type === 'image') return IMAGE_MODEL_LABELS[model] || model;
+  if (type === 'video') return VIDEO_MODEL_LABELS[model] || model;
+  return model;
 }
 
 function buildCaption(type, model, prompt, options) {
@@ -166,16 +189,6 @@ function buildCaption(type, model, prompt, options) {
   );
 }
 
-function getModelLabel(type, model) {
-  if (type === 'image') {
-    return model === 'mystic' ? 'Mystic 2K' : 'Classic Fast';
-  }
-  if (type === 'video') {
-    return model === 'kling_std' ? 'Kling v3 Std' : 'Kling v3 Pro';
-  }
-  return model;
-}
-
 function buildOptionsText(type, options) {
   if (!options) return '';
   const parts = [];
@@ -184,7 +197,7 @@ function buildOptionsText(type, options) {
     if (options.aspectRatio) parts.push(`📺 Rasio: ${options.aspectRatio}`);
     if (options.duration) parts.push(`⏱ Durasi: ${options.duration}s`);
   }
-  if (type === 'music' && options.duration) parts.push(`⏱ Durasi: ${options.duration}s`);
+  if ((type === 'music' || type === 'sfx') && options.duration) parts.push(`⏱ Durasi: ${options.duration}s`);
   if (type === 'tts' && options.voice) parts.push(`🎙 Suara: ${options.voice}`);
   return parts.join('\n');
 }

@@ -65,6 +65,15 @@ async function startWorkers() {
   ttsWorker.on('completed', onCompleted);
   ttsWorker.on('failed', onFailed);
 
+  // SFX Worker
+  const sfxWorker = new Worker(
+    QUEUE_NAMES.SFX,
+    (job) => processJob(job),
+    { ...workerOptions, concurrency: 3 }
+  );
+  sfxWorker.on('completed', onCompleted);
+  sfxWorker.on('failed', onFailed);
+
   console.log('[Workers] All workers started');
   console.log(`[Workers] Queues: ${Object.values(QUEUE_NAMES).join(', ')}`);
 
@@ -76,6 +85,7 @@ async function startWorkers() {
       videoWorker.close(),
       musicWorker.close(),
       ttsWorker.close(),
+      sfxWorker.close(),
     ]);
     process.exit(0);
   };

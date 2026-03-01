@@ -8,6 +8,74 @@ const { upgradeUserPlan } = require('../../utils/userHelper');
 const { Transaction } = require('../../models');
 const config = require('../../config');
 
+// ── QRIS Auto-Expiry Timer Map ─────────────────────
+// key: transactionId, value: { timer, chatId, messageId }
+const activeQrisTimers = new Map();
+
+const QRIS_EXPIRY_MS = 15 * 60 * 1000; // 15 minutes
+
+/**
+ * Start a 15-minute auto-expiry timer for a QRIS transaction.
+ * When it fires, it deletes the QR message, marks the transaction as expired.
+ */
+function startExpiryTimer(telegram, transactionId, chatId, messageId) {
+  // Clear any existing timer for this transaction
+  clearExpiryTimer(transactionId);
+
+  const timer = setTimeout(async () => {
+    activeQrisTimers.delete(transactionId);
+    try {
+      // Check if the transaction is still pending before expiring
+      const txDoc = await Transaction.findOne({ transactionId });
+      if (!txDoc || txDoc.status !== 'pending') return; // already paid/cancelled
+
+      // Mark as expired in DB
+      txDoc.status = 'expired';
+      await txDoc.save();
+
+      // Try to delete the QR message
+      await telegram.deleteMessage(chatId, messageId).catch(() => {});
+
+      // Notify user
+      await telegram.sendMessage(
+        chatId,
+        `⏰ *Transaksi QRIS kadaluarsa*\n\n` +
+        `Transaction ID: \`${transactionId}\`\n\n` +
+        `QR code telah dihapus. Silakan buat transaksi baru jika masih ingin upgrade.`,
+        { parse_mode: 'Markdown' }
+      );
+    } catch (err) {
+      console.error(`[Payment] Auto-expiry error for ${transactionId}:`, err.message);
+    }
+  }, QRIS_EXPIRY_MS);
+
+  activeQrisTimers.set(transactionId, { timer, chatId, messageId });
+}
+
+/**
+ * Clear an active expiry timer (e.g., when payment confirmed or cancelled).
+ */
+function clearExpiryTimer(transactionId) {
+  const entry = activeQrisTimers.get(transactionId);
+  if (entry) {
+    clearTimeout(entry.timer);
+    activeQrisTimers.delete(transactionId);
+  }
+}
+
+/**
+ * Delete the QR message for a transaction (on payment confirm or expiry).
+ */
+async function deleteQrisMessage(telegram, transactionId) {
+  const entry = activeQrisTimers.get(transactionId);
+  if (entry) {
+    await telegram.deleteMessage(entry.chatId, entry.messageId).catch(() => {});
+    clearExpiryTimer(transactionId);
+  }
+}
+
+// ─────────────────────────────────────────
+
 async function showPlans(ctx) {
   ctx.session.step = 'select_plan';
   const user = ctx.state.user;
@@ -18,7 +86,7 @@ async function showPlans(ctx) {
     `━━━━━━━━━━━━━━━━━━━━\n` +
     `🚀 *PRO — Rp 29.000/bulan*\n` +
     `• 50 Gambar | 20 Video\n` +
-    `• 30 Musik | 100 TTS\n\n` +
+    `• 30 Musik | 50 SFX | 100 TTS\n\n` +
     `♾️ *UNLIMITED — Rp 79.000/bulan*\n` +
     `• 9999 semua kategori\n` +
     `━━━━━━━━━━━━━━━━━━━━\n\n` +
@@ -65,9 +133,6 @@ async function handleBuyPlan(ctx, plan) {
     }
 
     const planLabel = plan === 'pro' ? 'Pro' : 'Unlimited';
-    const expiresStr = txData.expiresAt
-      ? new Date(txData.expiresAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-      : '15 menit';
 
     const caption =
       `💳 *Pembayaran QRIS — ${planLabel}*\n\n` +
@@ -76,13 +141,13 @@ async function handleBuyPlan(ctx, plan) {
       `💰 Harga asli: Rp ${txData.amountOriginal.toLocaleString('id-ID')}\n` +
       `🔢 Unique code: +${txData.amountUnique}\n` +
       `⚠️ *Transfer TEPAT: Rp ${txData.amountTotal.toLocaleString('id-ID')}*\n\n` +
-      `⏰ Berlaku hingga: ${expiresStr}\n\n` +
+      `⏰ Berlaku: *15 menit* (otomatis expired)\n\n` +
       `_Scan QR di atas, lalu transfer TEPAT sesuai nominal._`;
 
     if (qrImageBuffer) {
       await ctx.telegram.deleteMessage(ctx.chat.id, ctx.callbackQuery.message.message_id).catch(() => {});
       try {
-        await ctx.replyWithPhoto(
+        const sentMsg = await ctx.replyWithPhoto(
           { source: qrImageBuffer },
           {
             caption,
@@ -90,26 +155,32 @@ async function handleBuyPlan(ctx, plan) {
             ...paymentCheckKeyboard(txData.transactionId),
           }
         );
+
+        // Start 15-minute auto-expiry timer
+        startExpiryTimer(ctx.telegram, txData.transactionId, ctx.chat.id, sentMsg.message_id);
       } catch (tgErr) {
         console.error('[Payment] Failed to send QR image:', tgErr.message);
         await ctx.reply(
           '❌ Gagal mengirim gambar QR ke Telegram. Silakan scan manual QRIS berikut di aplikasi e-wallet:\n<code>' + (txData.qrisContent || '-tidak ada-') + '</code>',
           { parse_mode: 'HTML' }
         );
-        await ctx.reply(caption, { parse_mode: 'Markdown', ...paymentCheckKeyboard(txData.transactionId) });
+        const sentMsg = await ctx.reply(caption, { parse_mode: 'Markdown', ...paymentCheckKeyboard(txData.transactionId) });
+        startExpiryTimer(ctx.telegram, txData.transactionId, ctx.chat.id, sentMsg.message_id);
       }
     } else {
-      // QR gagal total, infokan ke user dan tampilkan QRIS string
       let failMsg = '❌ Gagal generate gambar QR.';
       if (qrError) failMsg += '\nAlasan: ' + qrError;
       await ctx.reply(
         failMsg + '\n\nSilakan scan manual QRIS berikut di aplikasi e-wallet:\n<code>' + (txData.qrisContent || '-tidak ada-') + '</code>',
         { parse_mode: 'HTML' }
       );
-      await ctx.editMessageText(caption, {
+      const sentMsg = await ctx.editMessageText(caption, {
         parse_mode: 'Markdown',
         ...paymentCheckKeyboard(txData.transactionId),
       });
+      if (sentMsg && sentMsg.message_id) {
+        startExpiryTimer(ctx.telegram, txData.transactionId, ctx.chat.id, sentMsg.message_id);
+      }
     }
   } catch (err) {
     console.error('[Payment] createTransaction error:', err.message);
@@ -126,12 +197,10 @@ async function handleCheckPayment(ctx, transactionId) {
     const txResult = await checkTransactionStatus(transactionId);
 
     if (txResult.status === 'paid') {
-      // Get plan from DB record
       const txDoc = await Transaction.findOne({ transactionId });
       if (!txDoc) throw new Error('Transaction not found in DB');
 
       if (txDoc.status === 'paid') {
-        // Already processed
         await ctx.reply('✅ Pembayaran sudah diproses sebelumnya! Akun kamu sudah diupgrade.');
         ctx.session.step = 'main_menu';
         return;
@@ -143,6 +212,9 @@ async function handleCheckPayment(ctx, transactionId) {
       await txDoc.save();
 
       await upgradeUserPlan(ctx.from.id, txDoc.plan);
+
+      // Clear timer and delete QR message
+      await deleteQrisMessage(ctx.telegram, transactionId);
 
       ctx.session.step = 'main_menu';
       ctx.session.pendingTransactionId = null;
@@ -157,17 +229,12 @@ async function handleCheckPayment(ctx, transactionId) {
       await sendMainMenu(ctx);
 
     } else if (txResult.status === 'expired') {
+      // Clear timer and delete QR message
+      await deleteQrisMessage(ctx.telegram, transactionId);
+
       ctx.session.step = 'main_menu';
       ctx.session.pendingTransactionId = null;
-      // The payment message may be either a text message (editMessageText) or
-      // a photo message with caption (editMessageCaption) depending on whether
-      // Hubify returned a QR image. Try text first, fall back to caption.
-      const expiredText = `⏰ *Transaksi sudah kadaluarsa.*\n\nSilakan buat transaksi baru.`;
-      await ctx.editMessageText(expiredText, { parse_mode: 'Markdown' })
-        .catch(() =>
-          ctx.editMessageCaption(expiredText, { parse_mode: 'Markdown' })
-            .catch(() => ctx.reply('⏰ Transaksi sudah kadaluarsa. Silakan buat transaksi baru.'))
-        );
+      await ctx.reply('⏰ Transaksi sudah kadaluarsa. Silakan buat transaksi baru.');
 
     } else {
       // Still pending
@@ -190,13 +257,14 @@ async function handleCancelPayment(ctx, transactionId) {
     await Transaction.findOneAndUpdate({ transactionId }, { status: 'cancelled' });
   } catch (_) {}
 
+  // Clear timer and delete QR message
+  await deleteQrisMessage(ctx.telegram, transactionId);
+
   ctx.session.step = 'main_menu';
   ctx.session.pendingTransactionId = null;
   ctx.session.pendingPlan = null;
 
-  // Message may be a photo (QR code) or text — try both edit methods.
-  await ctx.editMessageText('❌ Transaksi dibatalkan.')
-    .catch(() => ctx.editMessageCaption('❌ Transaksi dibatalkan.').catch(() => {}));
+  await ctx.reply('❌ Transaksi dibatalkan.');
   await sendMainMenu(ctx);
 }
 

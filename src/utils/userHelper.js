@@ -83,7 +83,8 @@ function formatUserProfile(user) {
     `🖼 Image: ${user.credits.image}\n` +
     `🎬 Video: ${user.credits.video}\n` +
     `🎵 Music: ${user.credits.music}\n` +
-    `🔊 TTS: ${user.credits.tts}`
+    `🔊 SFX: ${user.credits.sfx || 0}\n` +
+    `🗣 TTS: ${user.credits.tts}`
   );
 }
 

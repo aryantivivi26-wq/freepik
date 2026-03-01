@@ -4,6 +4,19 @@ const { imageModelKeyboard, imageRatioKeyboard, imageConfirmKeyboard } = require
 const { sendMainMenu } = require('../menus/mainMenu');
 const { submitJob } = require('./jobHandler');
 
+const IMAGE_MODEL_LABELS = {
+  classic_fast: 'Classic Fast',
+  mystic: 'Mystic 2K',
+  flux_dev: 'Flux Dev',
+  flux_2_pro: 'Flux 2 Pro',
+  flux_2_klein: 'Flux 2 Klein',
+  flux_kontext: 'Flux Kontext Pro',
+  hyperflux: 'HyperFlux',
+  seedream: 'Seedream v4.5',
+  seedream_v5: 'Seedream v5 Lite',
+  z_image: 'Z-Image',
+};
+
 async function startImageFlow(ctx) {
   ctx.session.type = 'image';
   ctx.session.step = 'select_model';
@@ -21,7 +34,7 @@ async function handleImageModel(ctx, model) {
   ctx.session.selectedModel = model;
   ctx.session.step = 'select_ratio';
 
-  const modelLabel = model === 'mystic' ? 'Mystic 2K' : 'Classic Fast';
+  const modelLabel = IMAGE_MODEL_LABELS[model] || model;
   await ctx.editMessageText(
     `🖼 *Generate Gambar AI*\nModel: *${modelLabel}*\n\nPilih ukuran/rasio gambar:`,
     { parse_mode: 'Markdown', ...imageRatioKeyboard() }
@@ -43,7 +56,6 @@ async function handleImageRatio(ctx, ratio) {
 async function handleImagePrompt(ctx) {
   const prompt = ctx.message.text;
 
-  // Guard against expired session (Redis TTL) — session fields reset to null
   const model = ctx.session.selectedModel;
   const ratio = ctx.session.selectedRatio;
   if (!model || !ratio) {
@@ -55,7 +67,7 @@ async function handleImagePrompt(ctx) {
   ctx.session.prompt = prompt;
   ctx.session.step = 'confirming';
 
-  const modelLabel = model === 'mystic' ? 'Mystic 2K' : 'Classic Fast';
+  const modelLabel = IMAGE_MODEL_LABELS[model] || model;
 
   await ctx.reply(
     `🖼 *Konfirmasi Generate Gambar*\n\n` +
@@ -70,7 +82,6 @@ async function handleImagePrompt(ctx) {
 async function confirmImageGeneration(ctx) {
   const { selectedModel, selectedRatio, prompt } = ctx.session;
 
-  // Guard against null session values
   if (!selectedModel || !selectedRatio || !prompt) {
     ctx.session.step = 'main_menu';
     await ctx.editMessageText('❌ Sesi kadaluarsa. Silakan mulai ulang.').catch(() => {});
@@ -100,4 +111,4 @@ async function confirmImageGeneration(ctx) {
   }
 }
 
-module.exports = { startImageFlow, handleImageModel, handleImageRatio, handleImagePrompt, confirmImageGeneration };
+module.exports = { startImageFlow, handleImageModel, handleImageRatio, handleImagePrompt, confirmImageGeneration, IMAGE_MODEL_LABELS };

@@ -14,18 +14,16 @@ const { startImageFlow, handleImageModel, handleImageRatio, handleImagePrompt, c
 const { startVideoFlow, handleVideoModel, handleVideoRatio, handleVideoDuration, handleVideoPrompt, confirmVideoGeneration } = require('./handlers/videoHandler');
 const { startMusicFlow, handleMusicDuration, handleMusicPrompt, confirmMusicGeneration } = require('./handlers/musicHandler');
 const { startTTSFlow, handleTTSVoice, handleTTSPrompt, confirmTTSGeneration } = require('./handlers/ttsHandler');
+const { startSfxFlow, handleSfxDuration, handleSfxPrompt, confirmSfxGeneration } = require('./handlers/sfxHandler');
 const { showPlans, handleBuyPlan, handleCheckPayment, handleCancelPayment } = require('./handlers/paymentHandler');
 const { handleStats, handleAddCredits, handleSetPlan, handleBan, handleUnban, handleBroadcast } = require('./handlers/adminHandler');
 
 function createBot() {
   const bot = new Telegraf(config.bot.token);
 
-  // ── Redis session store (reuse singleton to avoid resource leak) ────
-  // Using getRedis() singleton means only one Redis client is opened and
-  // closed during graceful shutdown — no orphaned connections.
   const sessionStore = new RedisSessionStore(getRedis(), {
     prefix: 'tgbot:sess:',
-    ttl: 86400, // 24h
+    ttl: 86400,
   });
 
   bot.use(
@@ -46,7 +44,6 @@ function createBot() {
     })
   );
 
-  // ── Custom middleware ────────────────────────────────
   bot.use(sessionMiddleware);
   bot.use(userMiddleware);
 
@@ -60,10 +57,11 @@ function createBot() {
       `👋 Halo, *${name}*!\n\n` +
       `Selamat datang di *AI Generator Bot* 🤖\n\n` +
       `Bot ini menggunakan teknologi AI terdepan untuk membantu kamu:\n` +
-      `🖼 Generate gambar berkualitas tinggi\n` +
-      `🎬 Buat video AI yang menakjubkan\n` +
+      `🖼 Generate gambar berkualitas tinggi (10 model)\n` +
+      `🎬 Buat video AI yang menakjubkan (7 model)\n` +
       `🎵 Compose musik original\n` +
-      `🔊 Text-to-speech dengan suara natural\n\n` +
+      `🔊 Sound effects AI\n` +
+      `🗣 Text-to-speech dengan suara natural\n\n` +
       `Gunakan menu di bawah untuk memulai!`,
       { parse_mode: 'Markdown' }
     );
@@ -129,7 +127,8 @@ function createBot() {
   bot.hears('🖼 Generate Gambar', startImageFlow);
   bot.hears('🎬 Generate Video', startVideoFlow);
   bot.hears('🎵 Generate Musik', startMusicFlow);
-  bot.hears('🔊 Text-to-Speech', startTTSFlow);
+  bot.hears('🔊 Sound Effects', startSfxFlow);
+  bot.hears('🗣 Text-to-Speech', startTTSFlow);
 
   bot.hears('👤 Profil Saya', async (ctx) => {
     const user = ctx.state.user;
@@ -152,8 +151,8 @@ function createBot() {
     `*Rate limit:*\n` +
     `Maksimal 3 job aktif per waktu.\n\n` +
     `*Plans:*\n` +
-    `🆓 Free: Image×5, Video×2, Music×3, TTS×10\n` +
-    `🚀 Pro (Rp29k): Image×50, Video×20, Music×30, TTS×100\n` +
+    `🆓 Free: Image×5, Video×2, Music×3, SFX×5, TTS×10\n` +
+    `🚀 Pro (Rp29k): Image×50, Video×20, Music×30, SFX×50, TTS×100\n` +
     `♾️ Unlimited (Rp79k): Semua unlimited`,
     { parse_mode: 'Markdown' }
   ));
@@ -165,50 +164,49 @@ function createBot() {
   // ── Image model selection ──────────────────────────
   bot.action(/^img_model:(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
-    const model = ctx.match[1]; // 'classic_fast' | 'mystic'
-    await handleImageModel(ctx, model);
+    await handleImageModel(ctx, ctx.match[1]);
   });
 
   // ── Image ratio selection ──────────────────────────
   bot.action(/^img_ratio:(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
-    const ratio = ctx.match[1];
-    await handleImageRatio(ctx, ratio);
+    await handleImageRatio(ctx, ctx.match[1]);
   });
 
   // ── Video model selection ──────────────────────────
   bot.action(/^vid_model:(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
-    const model = ctx.match[1]; // 'kling_pro' | 'kling_std'
-    await handleVideoModel(ctx, model);
+    await handleVideoModel(ctx, ctx.match[1]);
   });
 
   // ── Video ratio selection ──────────────────────────
   bot.action(/^vid_ratio:(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
-    const ratio = ctx.match[1];
-    await handleVideoRatio(ctx, ratio);
+    await handleVideoRatio(ctx, ctx.match[1]);
   });
 
   // ── Video duration selection ───────────────────────
   bot.action(/^vid_dur:(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
-    const duration = ctx.match[1];
-    await handleVideoDuration(ctx, duration);
+    await handleVideoDuration(ctx, ctx.match[1]);
   });
 
   // ── Music duration selection ───────────────────────
   bot.action(/^music_dur:(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
-    const duration = ctx.match[1];
-    await handleMusicDuration(ctx, duration);
+    await handleMusicDuration(ctx, ctx.match[1]);
+  });
+
+  // ── SFX duration selection ─────────────────────────
+  bot.action(/^sfx_dur:(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    await handleSfxDuration(ctx, ctx.match[1]);
   });
 
   // ── TTS voice selection ────────────────────────────
   bot.action(/^tts_voice:(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
-    const voice = ctx.match[1];
-    await handleTTSVoice(ctx, voice);
+    await handleTTSVoice(ctx, ctx.match[1]);
   });
 
   // ── Confirm generation ─────────────────────────────
@@ -225,6 +223,11 @@ function createBot() {
   bot.action('confirm:music', async (ctx) => {
     await ctx.answerCbQuery();
     await confirmMusicGeneration(ctx);
+  });
+
+  bot.action('confirm:sfx', async (ctx) => {
+    await ctx.answerCbQuery();
+    await confirmSfxGeneration(ctx);
   });
 
   bot.action('confirm:tts', async (ctx) => {
@@ -274,31 +277,35 @@ function createBot() {
   bot.action('back:video_ratio', async (ctx) => {
     await ctx.answerCbQuery();
     ctx.session.step = 'select_ratio';
-    const { videoRatioKeyboard } = require('./menus/videoMenu');
-    await ctx.editMessageText(
-      `🎬 *Generate Video AI*\n\nPilih rasio video:`,
-      { parse_mode: 'Markdown', ...videoRatioKeyboard() }
-    );
+    const model = ctx.session.selectedModel;
+    const { videoModelKeyboard } = require('./menus/videoMenu');
+    // Go back to model selection if model context lost
+    if (!model) {
+      await ctx.editMessageText(
+        '🎬 *Generate Video AI*\n\nPilih model yang ingin kamu gunakan:',
+        { parse_mode: 'Markdown', ...videoModelKeyboard() }
+      );
+      return;
+    }
+    // Show the correct ratio keyboard for the selected model
+    const handler = require('./handlers/videoHandler');
+    await handleVideoModel(ctx, model);
   });
 
   // ── Payment handlers ───────────────────────────────
   bot.action(/^buy_plan:(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
-    const plan = ctx.match[1];
-    await handleBuyPlan(ctx, plan);
+    await handleBuyPlan(ctx, ctx.match[1]);
   });
 
   bot.action(/^check_payment:(.+)$/, async (ctx) => {
-    // answerCbQuery here (not delegated to handler) to match consistent pattern
     await ctx.answerCbQuery('🔄 Mengecek status pembayaran...');
-    const transactionId = ctx.match[1];
-    await handleCheckPayment(ctx, transactionId);
+    await handleCheckPayment(ctx, ctx.match[1]);
   });
 
   bot.action(/^cancel_payment:(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
-    const transactionId = ctx.match[1];
-    await handleCancelPayment(ctx, transactionId);
+    await handleCancelPayment(ctx, ctx.match[1]);
   });
 
   // ────────────────────────────────────────────────────
@@ -310,12 +317,12 @@ function createBot() {
     const type = ctx.session.type;
 
     if (step !== 'awaiting_prompt') return;
-
     if (!ctx.message.text || ctx.message.text.startsWith('/')) return;
 
     if (type === 'image') return handleImagePrompt(ctx);
     if (type === 'video') return handleVideoPrompt(ctx);
     if (type === 'music') return handleMusicPrompt(ctx);
+    if (type === 'sfx')   return handleSfxPrompt(ctx);
     if (type === 'tts')   return handleTTSPrompt(ctx);
   });
 

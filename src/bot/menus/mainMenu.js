@@ -5,9 +5,9 @@ const { Markup } = require('telegraf');
 function mainMenuKeyboard() {
   return Markup.keyboard([
     ['🖼 Generate Gambar', '🎬 Generate Video'],
-    ['🎵 Generate Musik', '🔊 Text-to-Speech'],
-    ['👤 Profil Saya', '💎 Upgrade Plan'],
-    ['❓ Bantuan'],
+    ['🎵 Generate Musik', '🔊 Sound Effects'],
+    ['🗣 Text-to-Speech', '👤 Profil Saya'],
+    ['💎 Upgrade Plan', '❓ Bantuan'],
   ])
     .resize()
     .persistent();
