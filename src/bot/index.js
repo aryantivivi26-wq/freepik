@@ -53,18 +53,28 @@ function createBot() {
 
   bot.command('start', async (ctx) => {
     const name = ctx.from.first_name || 'Pengguna';
-    await ctx.reply(
-      `👋 Halo, *${name}*!\n\n` +
-      `Selamat datang di *AI Generator Bot* 🤖\n\n` +
-      `Bot ini menggunakan teknologi AI terdepan untuk membantu kamu:\n` +
-      `🖼 Generate gambar berkualitas tinggi (10 model)\n` +
-      `🎬 Buat video AI yang menakjubkan (7 model)\n` +
-      `🎵 Compose musik original\n` +
-      `🔊 Sound effects AI\n` +
-      `🗣 Text-to-speech dengan suara natural\n\n` +
-      `Gunakan menu di bawah untuk memulai!`,
-      { parse_mode: 'Markdown' }
-    );
+    const welcome =
+      `✦ *Hubify Studio* — AI Creative Platform\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `Halo, *${name}*! 👋\n\n` +
+      `🎬 *Video Generator*\n` +
+      `  Kling v3 Pro/Std · Kling Omni Pro/Std\n` +
+      `  Runway Gen 4.5 · Wan 2.5 · Seedance 1.5 Pro\n\n` +
+      `🎨 *Image Generator*\n` +
+      `  Classic Fast · Mystic 2K · Flux Dev\n` +
+      `  Flux 2 Pro · Flux 2 Klein · Flux Kontext Pro\n` +
+      `  HyperFlux · Seedream v4.5/v5 · Z-Image\n\n` +
+      `🔊 *Text-to-Speech* (ElevenLabs)\n` +
+      `  Multiple voices · Natural speech\n\n` +
+      `🎵 *Music Generator*\n` +
+      `  Original AI music · 15–60s duration\n\n` +
+      `🎧 *Sound Effects*\n` +
+      `  AI-generated SFX · 5–22s duration\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `📌 Pilih kategori dari menu di bawah untuk memulai.\n` +
+      `Ketik /help untuk info akses & credit.`;
+
+    await ctx.reply(welcome, { parse_mode: 'Markdown' });
     ctx.session.step = 'main_menu';
     await sendMainMenu(ctx);
   });
@@ -81,19 +91,26 @@ function createBot() {
   });
 
   bot.command('help', (ctx) => {
+    const user = ctx.state.user;
+    const plan = user ? user.plan.toUpperCase() : 'FREE';
+    const c = user ? user.credits : { image: 0, video: 0, music: 0, sfx: 0, tts: 0 };
     return ctx.reply(
-      `❓ *Bantuan*\n\n` +
-      `*Cara penggunaan:*\n` +
-      `1. Pilih jenis konten dari menu\n` +
-      `2. Pilih model & opsi\n` +
-      `3. Kirim prompt/teks\n` +
-      `4. Tunggu hasilnya!\n\n` +
-      `*Credit sistem:*\n` +
-      `Setiap generasi membutuhkan 1 credit.\n` +
-      `Credit dikembalikan jika generasi gagal.\n\n` +
-      `*Rate limit:*\n` +
-      `Maksimal 3 job aktif per waktu.\n\n` +
-      `*Butuh bantuan?* Hubungi admin bot ini.`,
+      `ℹ️ *Hubify Studio — Help*\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `*Status Akun*\n` +
+      `  Plan: *${plan}*\n` +
+      `  🎨 Image: ${c.image} · 🎬 Video: ${c.video}\n` +
+      `  🎵 Music: ${c.music} · 🎧 SFX: ${c.sfx} · 🔊 TTS: ${c.tts}\n\n` +
+      `*Cara Pakai*\n` +
+      `  1. Pilih kategori dari menu\n` +
+      `  2. Pilih model & opsi\n` +
+      `  3. Kirim prompt → tunggu hasil\n\n` +
+      `*Info*\n` +
+      `  • 1 credit = 1 generasi\n` +
+      `  • Credit refund otomatis jika gagal\n` +
+      `  • Maks 3 job aktif bersamaan\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `/menu — Buka menu · /profile — Lihat profil`,
       { parse_mode: 'Markdown' }
     );
   });
@@ -163,22 +180,26 @@ function createBot() {
 
   bot.action('menu:help', async (ctx) => {
     await ctx.answerCbQuery();
+    const user = ctx.state.user;
+    const plan = user ? user.plan.toUpperCase() : 'FREE';
+    const c = user ? user.credits : { image: 0, video: 0, music: 0, sfx: 0, tts: 0 };
     await ctx.reply(
-      `❓ *Bantuan*\n\n` +
-      `*Cara penggunaan:*\n` +
-      `1. Pilih jenis konten dari menu\n` +
-      `2. Pilih model & opsi\n` +
-      `3. Kirim prompt/teks\n` +
-      `4. Tunggu hasilnya!\n\n` +
-      `*Credit sistem:*\n` +
-      `Setiap generasi membutuhkan 1 credit.\n` +
-      `Credit dikembalikan jika generasi gagal.\n\n` +
-      `*Rate limit:*\n` +
-      `Maksimal 3 job aktif per waktu.\n\n` +
-      `*Plans:*\n` +
-      `🆓 Free: Image×5, Video×2, Music×3, SFX×5, TTS×10\n` +
-      `🚀 Pro (Rp29k): Image×50, Video×20, Music×30, SFX×50, TTS×100\n` +
-      `♾️ Unlimited (Rp79k): Semua unlimited`,
+      `ℹ️ *Hubify Studio — Help*\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `*Status Akun*\n` +
+      `  Plan: *${plan}*\n` +
+      `  🎨 Image: ${c.image} · 🎬 Video: ${c.video}\n` +
+      `  🎵 Music: ${c.music} · 🎧 SFX: ${c.sfx} · 🔊 TTS: ${c.tts}\n\n` +
+      `*Plans*\n` +
+      `  🆓 Free — Image×5 · Video×2 · Music×3 · SFX×5 · TTS×10\n` +
+      `  🚀 Pro (Rp29k) — 50/20/30/50/100\n` +
+      `  ♾️ Unlimited (Rp79k) — Semua unlimited\n\n` +
+      `*Info*\n` +
+      `  • 1 credit = 1 generasi\n` +
+      `  • Credit refund otomatis jika gagal\n` +
+      `  • Maks 3 job aktif bersamaan\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `/menu — Buka menu · /profile — Lihat profil`,
       { parse_mode: 'Markdown' }
     );
   });

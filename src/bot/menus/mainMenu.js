@@ -4,27 +4,23 @@ const { Markup } = require('telegraf');
 
 function mainMenuKeyboard() {
   return Markup.inlineKeyboard([
+    [Markup.button.callback('🎨  Image Generator', 'menu:image')],
+    [Markup.button.callback('🎬  Video Generator', 'menu:video')],
     [
-      Markup.button.callback('🖼 Generate Gambar', 'menu:image'),
-      Markup.button.callback('🎬 Generate Video', 'menu:video'),
+      Markup.button.callback('🎵  Music', 'menu:music'),
+      Markup.button.callback('🎧  SFX', 'menu:sfx'),
+      Markup.button.callback('🔊  TTS', 'menu:tts'),
     ],
     [
-      Markup.button.callback('🎵 Generate Musik', 'menu:music'),
-      Markup.button.callback('🔊 Sound Effects', 'menu:sfx'),
+      Markup.button.callback('👤  Profil', 'menu:profile'),
+      Markup.button.callback('💎  Upgrade', 'menu:upgrade'),
     ],
-    [
-      Markup.button.callback('🗣 Text-to-Speech', 'menu:tts'),
-      Markup.button.callback('👤 Profil Saya', 'menu:profile'),
-    ],
-    [
-      Markup.button.callback('💎 Upgrade Plan', 'menu:upgrade'),
-      Markup.button.callback('❓ Bantuan', 'menu:help'),
-    ],
+    [Markup.button.callback('ℹ️  Help', 'menu:help')],
   ]);
 }
 
 async function sendMainMenu(ctx, text) {
-  const msg = text || '🏠 *Menu Utama*\n\nPilih layanan yang ingin kamu gunakan:';
+  const msg = text || '✦ *Hubify Studio*\n\nPilih layanan:';
   return ctx.reply(msg, {
     parse_mode: 'Markdown',
     ...mainMenuKeyboard(),
