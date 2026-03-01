@@ -26,4 +26,5 @@ module.exports = {
   User: require('./User'),
   Job: require('./Job'),
   Transaction: require('./Transaction'),
+  ApiKey: require('./ApiKey'),
 };

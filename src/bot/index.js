@@ -16,7 +16,7 @@ const { startMusicFlow, handleMusicDuration, handleMusicPrompt, confirmMusicGene
 const { startTTSFlow, handleTTSVoice, handleTTSPrompt, confirmTTSGeneration } = require('./handlers/ttsHandler');
 const { startSfxFlow, handleSfxDuration, handleSfxPrompt, confirmSfxGeneration } = require('./handlers/sfxHandler');
 const { showPlans, handleBuyPlan, handleCheckPayment, handleCancelPayment } = require('./handlers/paymentHandler');
-const { handleStats, handleAddCredits, handleSetPlan, handleBan, handleUnban, handleBroadcast } = require('./handlers/adminHandler');
+const admin = require('./handlers/adminHandler');
 
 function createBot() {
   const bot = new Telegraf(config.bot.token);
@@ -40,12 +40,23 @@ function createBot() {
         pendingJobId: null,
         pendingTransactionId: null,
         pendingPlan: null,
+        // Admin panel session fields
+        adminStep: null,
+        adminTarget: null,
+        adminCreditType: null,
+        broadcastTarget: null,
+        broadcastMessage: null,
       }),
     })
   );
 
   bot.use(sessionMiddleware);
   bot.use(userMiddleware);
+
+  // ── ADMIN COMMAND ───────────────────────────────────
+  bot.command('admin', adminOnly(config), async (ctx) => {
+    await admin.showAdminMenu(ctx);
+  });
 
   // ────────────────────────────────────────────────────
   // COMMANDS
@@ -71,12 +82,10 @@ function createBot() {
       `🎧 *Sound Effects*\n` +
       `  AI-generated SFX · 5–22s duration\n\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `📌 Pilih kategori dari menu di bawah untuk memulai.\n` +
-      `Ketik /help untuk info akses & credit.`;
+      `📌 Pilih kategori dari menu di bawah untuk memulai.`;
 
-    await ctx.reply(welcome, { parse_mode: 'Markdown' });
     ctx.session.step = 'main_menu';
-    await sendMainMenu(ctx);
+    await sendMainMenu(ctx, welcome);
   });
 
   bot.command('menu', async (ctx) => {
@@ -127,15 +136,262 @@ function createBot() {
     await sendMainMenu(ctx);
   });
 
-  // ── ADMIN COMMANDS ─────────────────────────────────
+  // ── ADMIN COMMANDS (legacy + interactive) ─────────
   const adminGuard = adminOnly(config);
 
-  bot.command('stats', adminGuard, handleStats);
-  bot.command('addcredits', adminGuard, handleAddCredits);
-  bot.command('setplan', adminGuard, handleSetPlan);
-  bot.command('ban', adminGuard, handleBan);
-  bot.command('unban', adminGuard, handleUnban);
-  bot.command('broadcast', adminGuard, handleBroadcast);
+  bot.command('stats', adminGuard, admin.handleStatsCommand);
+  bot.command('addcredits', adminGuard, admin.handleAddCreditsCommand);
+  bot.command('setplan', adminGuard, admin.handleSetPlanCommand);
+  bot.command('ban', adminGuard, admin.handleBanCommand);
+  bot.command('unban', adminGuard, admin.handleUnbanCommand);
+  bot.command('broadcast', adminGuard, admin.handleBroadcastCommand);
+
+  // ── ADMIN INLINE PANEL CALLBACKS ──────────────────
+  const isAdmin = (ctx) => Number(ctx.from?.id) === Number(config.bot.adminId);
+
+  bot.action('admin:menu', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.showAdminMenu(ctx);
+  });
+
+  bot.action('admin:stats', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.showStats(ctx);
+  });
+
+  // ── User Management ────────────────────────────────
+  bot.action('admin:users', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.showUserManagement(ctx);
+  });
+
+  bot.action('admin:user_search', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.promptUserSearch(ctx);
+  });
+
+  bot.action('admin:user_subs', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.listSubscribers(ctx, 0);
+  });
+
+  bot.action('admin:user_all', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.listAllUsers(ctx, 0);
+  });
+
+  bot.action('admin:user_banned', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.listBannedUsers(ctx, 0);
+  });
+
+  bot.action('admin:user_recent', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.listRecentUsers(ctx);
+  });
+
+  bot.action(/^admin:userdetail:(\d+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.showUserDetail(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:ban:(\d+)$/, async (ctx) => {
+    if (!isAdmin(ctx)) return ctx.answerCbQuery();
+    await admin.handleBan(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:unban:(\d+)$/, async (ctx) => {
+    if (!isAdmin(ctx)) return ctx.answerCbQuery();
+    await admin.handleUnban(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:setplan:(\d+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.showPlanSelection(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:dosetplan:(\d+):(\w+)$/, async (ctx) => {
+    if (!isAdmin(ctx)) return ctx.answerCbQuery();
+    await admin.handleSetPlan(ctx, ctx.match[1], ctx.match[2]);
+  });
+
+  bot.action(/^admin:addcred:(\d+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.showCreditTypeSelection(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:credtype:(\d+):(\w+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.promptCreditAmount(ctx, ctx.match[1], ctx.match[2]);
+  });
+
+  bot.action(/^admin:credall:(\d+)$/, async (ctx) => {
+    if (!isAdmin(ctx)) return ctx.answerCbQuery();
+    await admin.handleAddAllCredits(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:resetcred:(\d+)$/, async (ctx) => {
+    if (!isAdmin(ctx)) return ctx.answerCbQuery();
+    await admin.handleResetCredits(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:userjobs:(\d+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.showUserJobs(ctx, ctx.match[1]);
+  });
+
+  // ── Pagination ─────────────────────────────────────
+  bot.action(/^admin:subspage:(\d+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.listSubscribers(ctx, parseInt(ctx.match[1], 10));
+  });
+
+  bot.action(/^admin:allpage:(\d+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.listAllUsers(ctx, parseInt(ctx.match[1], 10));
+  });
+
+  bot.action(/^admin:bannedpage:(\d+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.listBannedUsers(ctx, parseInt(ctx.match[1], 10));
+  });
+
+  // ── Credit & Plan (Bulk) ───────────────────────────
+  bot.action('admin:credits', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.showCreditPlanMenu(ctx);
+  });
+
+  bot.action('admin:cp_search', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.promptCpSearch(ctx);
+  });
+
+  bot.action('admin:bulk_pro', async (ctx) => {
+    if (!isAdmin(ctx)) return ctx.answerCbQuery();
+    await admin.handleBulkPro(ctx);
+  });
+
+  bot.action('admin:bulk_credits', async (ctx) => {
+    if (!isAdmin(ctx)) return ctx.answerCbQuery();
+    await admin.handleBulkCredits(ctx);
+  });
+
+  bot.action('admin:revenue', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.showRevenue(ctx);
+  });
+
+  // ── Broadcast ──────────────────────────────────────
+  bot.action('admin:broadcast', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.showBroadcastMenu(ctx);
+  });
+
+  bot.action('admin:bc_all', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.promptBroadcast(ctx, 'all');
+  });
+
+  bot.action('admin:bc_subs', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.promptBroadcast(ctx, 'subs');
+  });
+
+  bot.action('admin:bc_free', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.promptBroadcast(ctx, 'free');
+  });
+
+  bot.action('admin:bc_confirm', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.executeBroadcast(ctx);
+  });
+
+  bot.action('admin:bc_cancel', async (ctx) => {
+    if (!isAdmin(ctx)) return ctx.answerCbQuery();
+    await admin.cancelBroadcast(ctx);
+  });
+
+  // ── API Key Management ─────────────────────────────
+  bot.action('admin:apikeys', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.showApiKeyMenu(ctx);
+  });
+
+  bot.action('admin:ak_list', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.listApiKeys(ctx);
+  });
+
+  bot.action('admin:ak_add', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.promptAddApiKey(ctx);
+  });
+
+  bot.action('admin:ak_stats', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.showApiKeyStats(ctx);
+  });
+
+  bot.action(/^admin:ak_detail:(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.showApiKeyDetail(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:ak_toggle:(.+)$/, async (ctx) => {
+    if (!isAdmin(ctx)) return ctx.answerCbQuery();
+    await admin.handleToggleApiKey(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:ak_test:(.+)$/, async (ctx) => {
+    if (!isAdmin(ctx)) return ctx.answerCbQuery();
+    await admin.handleTestApiKey(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:ak_delete:(.+)$/, async (ctx) => {
+    if (!isAdmin(ctx)) return ctx.answerCbQuery();
+    await admin.handleDeleteApiKey(ctx, ctx.match[1]);
+  });
+
+  // ── System Info ────────────────────────────────────
+  bot.action('admin:system', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    await admin.showSystemInfo(ctx);
+  });
+
+  // ── Noop (pagination page counter) ─────────────────
+  bot.action('noop', (ctx) => ctx.answerCbQuery());
 
   // ────────────────────────────────────────────────────
   // MAIN MENU INLINE BUTTON HANDLERS
@@ -360,11 +616,18 @@ function createBot() {
   // ────────────────────────────────────────────────────
 
   bot.on('text', async (ctx) => {
+    if (!ctx.message.text || ctx.message.text.startsWith('/')) return;
+
+    // Admin text input handler (search, credits, broadcast, api keys, etc.)
+    if (Number(ctx.from?.id) === Number(config.bot.adminId) && ctx.session.adminStep) {
+      const consumed = await admin.handleAdminTextInput(ctx);
+      if (consumed) return;
+    }
+
     const step = ctx.session.step;
     const type = ctx.session.type;
 
     if (step !== 'awaiting_prompt') return;
-    if (!ctx.message.text || ctx.message.text.startsWith('/')) return;
 
     if (type === 'image') return handleImagePrompt(ctx);
     if (type === 'video') return handleVideoPrompt(ctx);

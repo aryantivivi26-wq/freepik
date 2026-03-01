@@ -46,6 +46,29 @@ async function main() {
   // ── Start Express webhook server ──────────────────────
   startWebhookServer(bot);
 
+  // ── Set bot command menu ──────────────────────────────
+  const userCommands = [
+    { command: 'start', description: 'Mulai bot & lihat info' },
+    { command: 'menu', description: 'Buka menu utama' },
+    { command: 'profile', description: 'Lihat profil & credit' },
+    { command: 'help', description: 'Bantuan & info akses' },
+    { command: 'cancel', description: 'Batalkan operasi' },
+  ];
+
+  const adminCommands = [
+    ...userCommands,
+    { command: 'admin', description: '🛡 Admin Panel' },
+    { command: 'stats', description: '📊 Statistik bot' },
+    { command: 'broadcast', description: '📢 Broadcast pesan' },
+  ];
+
+  await bot.telegram.setMyCommands(userCommands);
+  if (config.bot.adminId) {
+    await bot.telegram.setMyCommands(adminCommands, {
+      scope: { type: 'chat', chat_id: config.bot.adminId },
+    });
+  }
+
   // ── Launch bot (long polling) ─────────────────────────
   await bot.launch({
     allowedUpdates: ['message', 'callback_query'],

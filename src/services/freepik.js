@@ -3,20 +3,39 @@
 const axios = require('axios');
 const config = require('../config');
 const { saveBase64ToFile, saveBufferToFile, downloadFile } = require('../utils/fileHelper');
+const apiKeyManager = require('../utils/apiKeyManager');
 
 const freepikClient = axios.create({
   baseURL: config.freepik.baseUrl,
   headers: {
-    'x-freepik-api-key': config.freepik.apiKey,
     'Content-Type': 'application/json',
   },
   timeout: 120000,
 });
 
-// Interceptor: log detailed Freepik API errors
+// Interceptor: rotate API key on each request
+freepikClient.interceptors.request.use(async (reqConfig) => {
+  try {
+    const apiKey = await apiKeyManager.getNextKey();
+    reqConfig.headers['x-freepik-api-key'] = apiKey;
+    reqConfig._usedApiKey = apiKey; // store for tracking
+  } catch (err) {
+    console.error('[Freepik] No API key available:', err.message);
+  }
+  return reqConfig;
+});
+
+// Interceptor: track success/failure per key
 freepikClient.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    const key = res.config._usedApiKey;
+    if (key) apiKeyManager.recordSuccess(key);
+    return res;
+  },
   (err) => {
+    const key = err.config?._usedApiKey;
+    if (key) apiKeyManager.recordFailure(key);
+
     if (err.response) {
       const { status, data } = err.response;
       const detail = typeof data === 'object' ? JSON.stringify(data) : data;

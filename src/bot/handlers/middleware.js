@@ -41,6 +41,12 @@ async function sessionMiddleware(ctx, next) {
     pendingJobId: null,
     pendingTransactionId: null,
     pendingPlan: null,
+    // Admin panel session fields
+    adminStep: null,
+    adminTarget: null,
+    adminCreditType: null,
+    broadcastTarget: null,
+    broadcastMessage: null,
   };
 
   for (const [key, val] of Object.entries(defaults)) {
@@ -57,7 +63,9 @@ async function sessionMiddleware(ctx, next) {
  */
 function adminOnly(config) {
   return async (ctx, next) => {
-    if (ctx.from?.id !== config.bot.adminId) {
+    const fromId = ctx.from?.id;
+    const adminId = config.bot.adminId;
+    if (!fromId || !adminId || Number(fromId) !== Number(adminId)) {
       return ctx.reply('⛔ Perintah ini hanya untuk admin.');
     }
     return next();
