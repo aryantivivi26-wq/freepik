@@ -6,6 +6,7 @@ const config = require('../../config');
 function mainMenuKeyboard(userId) {
   const buttons = [
     [Markup.button.callback('🎨  Image Generator', 'menu:image')],
+    [Markup.button.callback('🖌  Image Editing', 'menu:image_edit')],
     [Markup.button.callback('🎬  Video Generator', 'menu:video')],
     [
       Markup.button.callback('🎵  Music', 'menu:music'),

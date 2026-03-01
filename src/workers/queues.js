@@ -8,6 +8,7 @@ let videoQueue = null;
 let musicQueue = null;
 let ttsQueue = null;
 let sfxQueue = null;
+let imageEditQueue = null;
 
 const QUEUE_NAMES = {
   IMAGE: 'image-generation',
@@ -15,6 +16,7 @@ const QUEUE_NAMES = {
   MUSIC: 'music-generation',
   TTS:   'tts-generation',
   SFX:   'sfx-generation',
+  IMAGE_EDIT: 'image-edit-generation',
 };
 
 const DEFAULT_JOB_OPTIONS = {
@@ -63,6 +65,13 @@ function getSFXQueue() {
   return sfxQueue;
 }
 
+function getImageEditQueue() {
+  if (!imageEditQueue) {
+    imageEditQueue = new Queue(QUEUE_NAMES.IMAGE_EDIT, { connection: getConnection() });
+  }
+  return imageEditQueue;
+}
+
 /**
  * Add a generation job to the appropriate queue.
  * @param {string} type - 'image'|'video'|'music'|'tts'|'sfx'
@@ -80,8 +89,9 @@ async function enqueueJob(type, payload) {
     case 'video': return getVideoQueue().add('generate', payload, jobOpts);
     case 'music': return getMusicQueue().add('generate', payload, jobOpts);
     case 'tts':   return getTTSQueue().add('generate', payload, jobOpts);
-    case 'sfx':   return getSFXQueue().add('generate', payload, jobOpts);
-    default:      throw new Error(`Unknown job type: ${type}`);
+    case 'sfx':        return getSFXQueue().add('generate', payload, jobOpts);
+    case 'image_edit': return getImageEditQueue().add('generate', payload, jobOpts);
+    default:           throw new Error(`Unknown job type: ${type}`);
   }
 }
 
@@ -93,5 +103,6 @@ module.exports = {
   getMusicQueue,
   getTTSQueue,
   getSFXQueue,
+  getImageEditQueue,
   enqueueJob,
 };

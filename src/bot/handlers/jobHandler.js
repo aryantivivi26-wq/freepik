@@ -47,10 +47,12 @@ async function submitJob(ctx, type, prompt, model, options = {}) {
   }
 
   // ── Atomic credit deduction (concurrency-safe) ──
-  const updatedUser = await User.atomicDeductCredit(userId, type);
+  // image_edit uses 'image' credits
+  const creditType = type === 'image_edit' ? 'image' : type;
+  const updatedUser = await User.atomicDeductCredit(userId, creditType);
   if (!updatedUser) {
     await ctx.reply(
-      `❌ *Credit ${type} kamu habis!*\n\n` +
+      `❌ *Credit ${creditType} kamu habis!*\n\n` +
       `Upgrade plan untuk mendapatkan lebih banyak credit.\n` +
       `Ketuk *💎 Upgrade Plan* untuk melihat pilihan.`,
       { parse_mode: 'Markdown' }
@@ -58,7 +60,7 @@ async function submitJob(ctx, type, prompt, model, options = {}) {
     return null;
   }
   // Sync local user object with updated credits
-  user.credits[type] = updatedUser.credits[type];
+  user.credits[creditType] = updatedUser.credits[creditType];
 
   // ── Create job in DB ────────────────────
   const jobId = uuidv4();

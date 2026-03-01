@@ -15,6 +15,7 @@ const { startVideoFlow, handleVideoModel, handleVideoRatio, handleVideoDuration,
 const { startMusicFlow, handleMusicDuration, handleMusicPrompt, confirmMusicGeneration } = require('./handlers/musicHandler');
 const { startTTSFlow, handleTTSVoice, handleTTSPrompt, confirmTTSGeneration } = require('./handlers/ttsHandler');
 const { startSfxFlow, handleSfxDuration, handleSfxPrompt, confirmSfxGeneration } = require('./handlers/sfxHandler');
+const { startImageEditFlow, handleEditTool, handleUpscaleScale, handleEditPhoto, confirmImageEdit } = require('./handlers/imageEditHandler');
 const { showPlans, handleBuyPlan, handleCheckPayment, handleCancelPayment } = require('./handlers/paymentHandler');
 const admin = require('./handlers/adminHandler');
 
@@ -46,6 +47,10 @@ function createBot() {
         adminCreditType: null,
         broadcastTarget: null,
         broadcastMessage: null,
+        // Image editing session fields
+        editTool: null,
+        editScale: null,
+        editImageFileId: null,
       }),
     })
   );
@@ -75,6 +80,9 @@ function createBot() {
       `  Classic Fast · Mystic 2K · Flux Dev\n` +
       `  Flux 2 Pro · Flux 2 Klein · Flux Kontext Pro\n` +
       `  HyperFlux · Seedream v4.5/v5 · Z-Image\n\n` +
+      `🖌 *Image Editing*\n` +
+      `  Upscale HD · Remove Background\n` +
+      `  Reimagine · Relight\n\n` +
       `🔊 *Text-to-Speech* (ElevenLabs)\n` +
       `  Multiple voices · Natural speech\n\n` +
       `🎵 *Music Generator*\n` +
@@ -132,6 +140,9 @@ function createBot() {
     ctx.session.selectedDuration = null;
     ctx.session.selectedVoice = null;
     ctx.session.prompt = null;
+    ctx.session.editTool = null;
+    ctx.session.editScale = null;
+    ctx.session.editImageFileId = null;
     await ctx.reply('✅ Operasi dibatalkan.');
     await sendMainMenu(ctx);
   });
@@ -422,6 +433,11 @@ function createBot() {
     await startTTSFlow(ctx);
   });
 
+  bot.action('menu:image_edit', async (ctx) => {
+    await ctx.answerCbQuery();
+    await startImageEditFlow(ctx);
+  });
+
   bot.action('menu:profile', async (ctx) => {
     await ctx.answerCbQuery();
     const user = ctx.state.user;
@@ -538,6 +554,26 @@ function createBot() {
     await confirmTTSGeneration(ctx);
   });
 
+  // ── Image Editing callbacks ────────────────────────
+  bot.action(/^imgedit:(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const tool = ctx.match[1];
+    if (tool === 'back_tool') {
+      return startImageEditFlow(ctx);
+    }
+    await handleEditTool(ctx, tool);
+  });
+
+  bot.action(/^imgedit_scale:(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    await handleUpscaleScale(ctx, ctx.match[1]);
+  });
+
+  bot.action('confirm:imgedit', async (ctx) => {
+    await ctx.answerCbQuery();
+    await confirmImageEdit(ctx);
+  });
+
   // ── Edit prompt ────────────────────────────────────
   bot.action('edit:prompt', async (ctx) => {
     await ctx.answerCbQuery();
@@ -609,6 +645,17 @@ function createBot() {
   bot.action(/^cancel_payment:(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     await handleCancelPayment(ctx, ctx.match[1]);
+  });
+
+  // ────────────────────────────────────────────────────
+  // PHOTO HANDLER (image editing)
+  // ────────────────────────────────────────────────────
+
+  bot.on('photo', async (ctx) => {
+    const consumed = await handleEditPhoto(ctx);
+    if (!consumed) {
+      await ctx.reply('📷 Untuk mengedit gambar, buka *🖌 Image Editing* dari /menu dulu.', { parse_mode: 'Markdown' });
+    }
   });
 
   // ────────────────────────────────────────────────────

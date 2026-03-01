@@ -74,6 +74,15 @@ async function startWorkers() {
   sfxWorker.on('completed', onCompleted);
   sfxWorker.on('failed', onFailed);
 
+  // Image Edit Worker
+  const imageEditWorker = new Worker(
+    QUEUE_NAMES.IMAGE_EDIT,
+    (job) => processJob(job),
+    { ...workerOptions, concurrency: 3 }
+  );
+  imageEditWorker.on('completed', onCompleted);
+  imageEditWorker.on('failed', onFailed);
+
   console.log('[Workers] All workers started');
   console.log(`[Workers] Queues: ${Object.values(QUEUE_NAMES).join(', ')}`);
 

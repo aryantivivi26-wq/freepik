@@ -47,6 +47,10 @@ async function sessionMiddleware(ctx, next) {
     adminCreditType: null,
     broadcastTarget: null,
     broadcastMessage: null,
+    // Image editing session fields
+    editTool: null,
+    editScale: null,
+    editImageFileId: null,
   };
 
   for (const [key, val] of Object.entries(defaults)) {

@@ -1,6 +1,7 @@
 'use strict';
 
 const { Telegram } = require('telegraf');
+const axios = require('axios');
 const { Job: JobModel, User } = require('../models');
 const { decrementActiveJobs } = require('../utils/redis');
 const { deleteFile } = require('../utils/fileHelper');
@@ -48,6 +49,31 @@ async function processVideo(prompt, model, options) {
   }
 }
 
+// ── IMAGE EDIT DISPATCH ───────────────────
+async function processImageEdit(telegram, prompt, model, options) {
+  const { editTool, editScale, editImageFileId } = options;
+
+  // Download photo from Telegram and convert to base64
+  const fileLink = await telegram.getFileLink(editImageFileId);
+  const response = await axios.get(fileLink.href, { responseType: 'arraybuffer', timeout: 60000 });
+  const imageBase64 = Buffer.from(response.data).toString('base64');
+
+  switch (editTool) {
+    case 'upscale':
+      return freepik.upscaleImage(imageBase64, editScale || '2');
+    case 'removebg': {
+      // Remove BG needs a URL, not base64 — use Telegram's file URL directly
+      return freepik.removeBackground(fileLink.href);
+    }
+    case 'reimagine':
+      return freepik.reimagineImage(imageBase64, prompt !== editTool ? prompt : null);
+    case 'relight':
+      return freepik.relightImage(imageBase64, prompt !== editTool ? prompt : null);
+    default:
+      throw new Error(`Unknown edit tool: ${editTool}`);
+  }
+}
+
 // ─────────────────────────────────────────
 // MAIN PROCESSOR
 // ─────────────────────────────────────────
@@ -77,6 +103,8 @@ async function processJob(bullJob) {
     } else if (type === 'tts') {
       const voice = options?.voice || 'rachel';
       filePath = await generateContent(() => freepik.generateTTS(prompt, voice));
+    } else if (type === 'image_edit') {
+      filePath = await processImageEdit(telegram, prompt, model, options);
     } else {
       throw new Error(`Unknown job type: ${type}`);
     }
@@ -84,7 +112,7 @@ async function processJob(bullJob) {
     // ── Send result to user ───────────────
     const caption = buildCaption(type, model, prompt, options);
 
-    if (type === 'image') {
+    if (type === 'image' || type === 'image_edit') {
       await telegram.sendPhoto(chatId, { source: filePath }, { caption, parse_mode: 'Markdown' });
     } else if (type === 'video') {
       await telegram.sendVideo(chatId, { source: filePath }, { caption, parse_mode: 'Markdown' });
@@ -147,14 +175,16 @@ async function generateContent(fn) {
 
 async function refundCredit(userId, type) {
   try {
-    await User.atomicRefundCredit(userId, type);
+    // image_edit uses 'image' credits
+    const creditType = type === 'image_edit' ? 'image' : type;
+    await User.atomicRefundCredit(userId, creditType);
   } catch (err) {
     console.error(`[Worker] Failed to refund credit for user ${userId}:`, err.message);
   }
 }
 
 function typeLabel(type) {
-  const labels = { image: 'Gambar', video: 'Video', music: 'Musik', tts: 'TTS', sfx: 'Sound Effect' };
+  const labels = { image: 'Gambar', video: 'Video', music: 'Musik', tts: 'TTS', sfx: 'Sound Effect', image_edit: 'Image Edit' };
   return labels[type] || type;
 }
 
@@ -170,8 +200,14 @@ const VIDEO_MODEL_LABELS = {
   runway: 'Runway Gen 4.5', wan: 'Wan 2.5', seedance: 'Seedance 1.5 Pro',
 };
 
+const IMAGE_EDIT_LABELS = {
+  edit_upscale: 'Upscale (HD)', edit_removebg: 'Remove Background',
+  edit_reimagine: 'Reimagine (AI)', edit_relight: 'Relight',
+};
+
 function getModelLabel(type, model) {
   if (type === 'image') return IMAGE_MODEL_LABELS[model] || model;
+  if (type === 'image_edit') return IMAGE_EDIT_LABELS[model] || model;
   if (type === 'video') return VIDEO_MODEL_LABELS[model] || model;
   return model;
 }
@@ -198,6 +234,7 @@ function buildOptionsText(type, options) {
     if (options.duration) parts.push(`⏱ Durasi: ${options.duration}s`);
   }
   if ((type === 'music' || type === 'sfx') && options.duration) parts.push(`⏱ Durasi: ${options.duration}s`);
+  if (type === 'image_edit' && options.editScale) parts.push(`📐 Scale: ${options.editScale}x`);
   if (type === 'tts' && options.voice) parts.push(`🎙 Suara: ${options.voice}`);
   return parts.join('\n');
 }

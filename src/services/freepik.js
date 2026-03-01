@@ -82,7 +82,8 @@ async function generateAsyncImage(endpoint, body, pollEndpoint) {
     return res.data?.data || res.data;
   }, taskId);
 
-  const imageUrl = result.generated?.[0]?.url;
+  const imageItem = result.generated?.[0];
+  const imageUrl = typeof imageItem === 'string' ? imageItem : imageItem?.url;
   if (!imageUrl) throw new Error(`No image URL from ${endpoint}`);
   return downloadFile(imageUrl, 'jpg');
 }
@@ -99,7 +100,8 @@ async function generateAsyncVideo(endpoint, body, pollEndpoint) {
     return res.data?.data || res.data;
   }, taskId);
 
-  const videoUrl = result.generated?.[0]?.url;
+  const videoItem = result.generated?.[0];
+  const videoUrl = typeof videoItem === 'string' ? videoItem : videoItem?.url;
   if (!videoUrl) throw new Error(`No video URL from ${endpoint}`);
   return downloadFile(videoUrl, 'mp4');
 }
@@ -116,7 +118,8 @@ async function generateAsyncAudio(endpoint, body, pollEndpoint, ext = 'mp3') {
     return res.data?.data || res.data;
   }, taskId);
 
-  const audioUrl = result.generated?.[0]?.url;
+  const audioItem = result.generated?.[0];
+  const audioUrl = typeof audioItem === 'string' ? audioItem : audioItem?.url;
   if (!audioUrl) throw new Error(`No audio URL from ${endpoint}`);
   return downloadFile(audioUrl, ext);
 }
@@ -301,8 +304,9 @@ async function generateMusic(prompt, durationSeconds = 30) {
 
 async function generateSFX(prompt, durationSeconds = 5) {
   return generateAsyncAudio('/ai/sound-effects', {
-    prompt,
+    text: prompt,
     duration_seconds: durationSeconds,
+    prompt_influence: 0.3,
   }, '/ai/sound-effects');
 }
 
@@ -318,13 +322,73 @@ const VOICES = {
 
 async function generateTTS(text, voiceId = 'rachel') {
   const resolvedVoiceId = VOICES[voiceId] || voiceId;
-  return generateAsyncAudio('/ai/voiceover', {
+  return generateAsyncAudio('/ai/voiceover/elevenlabs-turbo-v2-5', {
     text,
     voice_id: resolvedVoiceId,
     stability: 0.5,
     similarity_boost: 0.75,
     speed: 1.0,
-  }, '/ai/voiceover');
+  }, '/ai/voiceover/elevenlabs-turbo-v2-5');
+}
+
+// ═════════════════════════════════════════
+//  IMAGE EDITING
+// ═════════════════════════════════════════
+
+// Upscale (Precision v2)
+async function upscaleImage(imageBase64, scaleFactor = '2x') {
+  console.log(`[Freepik] Upscale request (${scaleFactor})`);
+  return generateAsyncImage('/ai/image-upscaler-precision-v2', {
+    image: imageBase64,
+    scale_factor: parseInt(scaleFactor, 10) || 2,
+  }, '/ai/image-upscaler-precision-v2');
+}
+
+// Remove Background (synchronous, form-encoded)
+async function removeBackground(imageUrl) {
+  console.log('[Freepik] Remove background request');
+  const response = await freepikClient.post('/ai/beta/remove-background', 
+    `image_url=${encodeURIComponent(imageUrl)}`,
+    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+  );
+  const resultUrl = response.data?.url || response.data?.high_resolution;
+  if (!resultUrl) throw new Error('No result URL from remove-background');
+  return downloadFile(resultUrl, 'png');
+}
+
+// Reimagine (Flux, synchronous)
+async function reimagineImage(imageBase64, prompt) {
+  console.log('[Freepik] Reimagine request');
+  const body = { image: imageBase64 };
+  if (prompt) body.prompt = prompt;
+  
+  const response = await freepikClient.post('/ai/beta/text-to-image/reimagine-flux', body);
+  const imageItem = response.data?.data?.generated?.[0] || response.data?.data?.[0];
+  const url = typeof imageItem === 'string' ? imageItem : imageItem?.url || imageItem?.base64;
+  if (!url) throw new Error('No result from reimagine');
+  
+  if (url.startsWith('http')) return downloadFile(url, 'jpg');
+  const buffer = Buffer.from(url, 'base64');
+  return saveBufferToFile(buffer, 'jpg');
+}
+
+// Relight
+async function relightImage(imageBase64, prompt) {
+  const body = { image: imageBase64 };
+  if (prompt) body.prompt = prompt;
+  return generateAsyncImage('/ai/image-relight', body, '/ai/image-relight');
+}
+
+// Style Transfer
+async function styleTransferImage(imageBase64, referenceBase64, prompt) {
+  const body = {
+    image: imageBase64,
+    reference_image: referenceBase64,
+    style_strength: 80,
+    structure_strength: 50,
+  };
+  if (prompt) body.prompt = prompt;
+  return generateAsyncImage('/ai/image-style-transfer', body, '/ai/image-style-transfer');
 }
 
 module.exports = {
@@ -346,6 +410,11 @@ module.exports = {
   generateMusic,
   generateSFX,
   generateTTS,
+  upscaleImage,
+  removeBackground,
+  reimagineImage,
+  relightImage,
+  styleTransferImage,
   VOICES,
   SIZE_MAP,
 };
